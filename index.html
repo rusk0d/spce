@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPCE</title>
+  <link rel="stylesheet" href="src/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="hud">
+    <div class="stat"><span class="label">Hull</span><span class="value" id="hud-hull">100</span></div>
+    <div class="stat"><span class="label">Fuel</span><span class="value" id="hud-fuel">10</span></div>
+    <div class="stat"><span class="label">Scrap</span><span class="value" id="hud-scrap">0</span></div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
