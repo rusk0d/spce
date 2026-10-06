@@ -16,6 +16,22 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
   hull damage). Destroying it salvages 15–30 Scrap; if your Hull reaches 0 it's
   Game Over, and **Restart** starts a fresh galaxy.
 
+- Crew: you start with three crew (Pilot, Engineer, Shields), shown in the crew
+  panel (top-right, or behind the **Crew** button on small screens). Tap/click
+  a role to reassign it. Each crew member on a role adds a bonus (injured crew
+  count half):
+  - **Shields** — +10% passive shield regeneration
+  - **Pilot** — −5% pirate hit chance
+  - **Engineer** — +3 hull repaired per jump
+- Shields (max 40) absorb pirate damage before the hull and regenerate
+  passively each combat turn (5) and each jump (12), scaled by the crew bonus.
+  Hull hits can injure a crew member; an injured member hit again is lost.
+- Star-node events: arriving without pirates may trigger an event (escape pod,
+  coolant leak, boarding party, medical outpost, volunteer, space fever) where
+  crew can be injured, lost, healed or recruited (up to 6). Injured crew may
+  also recover on their own between jumps.
+- Game Over when the hull is destroyed **or** the whole crew is lost.
+
 ## Mobile
 
 - Works on touch screens: buttons and map systems respond on `pointerdown`
@@ -34,6 +50,8 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
 
 - `src/main.js` — scene, planet, game state, camera transitions, input
 - `src/galaxy.js` — galaxy graph generation and the 3D map view
+- `src/crew.js` — crew model, role bonuses and the crew panel
+- `src/events.js` — star-node crew events
 - `src/combat.js` — pirate encounter: turn logic, lasers, hit flashes, explosions
 - `src/ship.js` — low-poly player ship and pirate raider meshes
 - `src/textures.js` — shared glow sprite texture

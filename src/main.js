@@ -3,6 +3,8 @@ import { createShip } from './ship.js';
 import { generateGalaxy, GalaxyMap } from './galaxy.js';
 import { Combat } from './combat.js';
 import { onPress, SwipeTracker } from './input.js';
+import { Crew, CrewPanel } from './crew.js';
+import { pickCrewEvent } from './events.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -179,10 +181,26 @@ function applyPlanet(spec) {
 }
 
 // Game state + HUD
-const state = { hull: 100, fuel: 10, scrap: 0, jumps: 0, piratesDefeated: 0, gameOver: false };
+const SHIELD_MAX = 40;
+const state = {
+  hull: 100,
+  shields: SHIELD_MAX,
+  fuel: 10,
+  scrap: 0,
+  jumps: 0,
+  piratesDefeated: 0,
+  gameOver: false,
+  eventOpen: false,
+};
 const PIRATE_CHANCE = 0.4;
+const CREW_EVENT_CHANCE = 0.55; // per arrival without pirates
+const SHIELD_REGEN_PER_TURN = 5; // passive regen each combat exchange, before crew bonus
+const SHIELD_REGEN_PER_JUMP = 12;
+const CREW_INJURY_ON_HULL_HIT = 0.25;
+const RECOVERY_PER_JUMP = 0.25; // chance an injured crew member recovers each jump
 const hud = {
   hull: document.getElementById('hud-hull'),
+  shields: document.getElementById('hud-shields'),
   fuel: document.getElementById('hud-fuel'),
   scrap: document.getElementById('hud-scrap'),
   system: document.getElementById('hud-system'),
@@ -190,16 +208,48 @@ const hud = {
 };
 function renderHud() {
   hud.hull.textContent = state.hull;
+  hud.shields.textContent = Math.floor(state.shields);
   hud.fuel.textContent = state.fuel;
   hud.scrap.textContent = state.scrap;
   hud.system.textContent = galaxyMap.current.name;
 }
+const chance = (p) => Math.random() < p;
+
+function flashStat(valueEl) {
+  const stat = valueEl.closest('.stat');
+  stat.classList.remove('hit');
+  void stat.offsetWidth; // restart the flash animation
+  stat.classList.add('hit');
+}
+
 let toastTimer;
 function toast(message) {
   hud.toast.textContent = message;
   hud.toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => hud.toast.classList.remove('show'), 2200);
+}
+
+// Crew
+const crewBtn = document.getElementById('crew-btn');
+const crewBtnCount = document.getElementById('crew-btn-count');
+let crewPanel = null;
+function renderCrew() {
+  if (!crewPanel) return;
+  crewPanel.render();
+  crewBtnCount.textContent = crew.count;
+  crewBtn.classList.toggle('alert', crew.members.some((m) => m.status === 'injured'));
+}
+const crew = new Crew(renderCrew);
+crewPanel = new CrewPanel(crew, document.getElementById('crew'));
+renderCrew();
+onPress(crewBtn, () => {
+  const open = document.body.classList.toggle('crew-open');
+  crewBtn.setAttribute('aria-expanded', String(open));
+});
+
+function regenShields(base) {
+  state.shields = Math.min(SHIELD_MAX, state.shields + base * crew.shieldRegenMultiplier);
 }
 
 // Galaxy map lives far below the planet scene; the camera flies between the two
@@ -265,6 +315,7 @@ const controls = {
   help: document.getElementById('help'),
 };
 const pointerVerb = isCoarsePointer ? 'Tap' : 'Click';
+document.getElementById('crew-tip').textContent = `${pointerVerb} a role to reassign`;
 const helpText = {
   main: isCoarsePointer ? 'Swipe to look around the ship' : 'Drag to look around · M for map',
   map: `${pointerVerb} a linked system to jump (−1 fuel)`,
@@ -284,12 +335,14 @@ function setView(next) {
   };
   document.body.classList.toggle('map-open', next === 'map');
   document.body.classList.toggle('in-combat', next === 'combat');
+  if (next === 'combat') document.body.classList.remove('crew-open');
   controls.help.textContent = helpText[next];
   controls.mapBtnText.textContent = next === 'map' ? 'Close Map' : 'Galaxy Map';
 }
 controls.help.textContent = helpText.main;
 
-const canToggleMap = () => !galaxyMap.travel && !combat.active && !state.gameOver && view !== 'combat';
+const canToggleMap = () =>
+  !galaxyMap.travel && !combat.active && !state.gameOver && !state.eventOpen && view !== 'combat';
 function toggleMap() {
   if (!canToggleMap()) return;
   setView(view === 'map' ? 'main' : 'map');
@@ -301,7 +354,6 @@ const combat = new Combat({
   scene,
   playerShip: ship,
   enemyPosition: new THREE.Vector3(13, 2, 11),
-  state,
   ui: {
     panel: document.getElementById('combat'),
     attack: document.getElementById('attack-btn'),
@@ -309,14 +361,30 @@ const combat = new Combat({
     enemyHpText: document.getElementById('enemy-hp-text'),
     log: document.getElementById('combat-log'),
   },
-  onHullChange: () => {
+  enemyHitChance: () => Math.max(0.85 - crew.evasion, 0.4),
+  onPlayerHit: (dmg) => {
+    // Shields soak damage first; whatever gets through hits the hull and may hurt crew
+    const absorbed = Math.min(Math.floor(state.shields), dmg);
+    state.shields -= absorbed;
+    const hullDmg = dmg - absorbed;
+    state.hull = Math.max(state.hull - hullDmg, 0);
+    const parts = [];
+    if (absorbed) parts.push(`Shields −${absorbed}`);
+    if (hullDmg) parts.push(`Hull −${hullDmg}`);
+    let message = `Pirate laser hits! ${parts.join(', ')}.`;
+    if (hullDmg && state.hull > 0 && chance(CREW_INJURY_ON_HULL_HIT)) message += ` ${crew.injureRandom()}`;
     renderHud();
-    const stat = hud.hull.closest('.stat');
-    stat.classList.remove('hit');
-    void stat.offsetWidth; // restart the flash animation
-    stat.classList.add('hit');
+    flashStat(hullDmg ? hud.hull : hud.shields);
+    const outcome = state.hull <= 0 ? 'destroyed' : crew.count === 0 ? 'crew' : null;
+    if (outcome === 'crew') message += ' No one is left aboard.';
+    return { message, outcome };
   },
-  onEnd: ({ result, scrap }) => {
+  onTurnEnd: () => {
+    regenShields(SHIELD_REGEN_PER_TURN);
+    renderHud();
+  },
+  onEnd: (outcome) => {
+    const { result, scrap } = outcome;
     if (result === 'win') {
       state.scrap += scrap;
       state.piratesDefeated += 1;
@@ -324,7 +392,7 @@ const combat = new Combat({
       toast(`Victory! +${scrap} scrap`);
       setView('main');
     } else {
-      showGameOver();
+      showGameOver(outcome.reason);
     }
   },
 });
@@ -335,8 +403,14 @@ async function startPirateFight() {
   combat.start();
 }
 
-function showGameOver() {
+const GAME_OVER_REASONS = {
+  pirates: 'Your ship was destroyed by pirates.',
+  crew: 'Your entire crew has been lost. The ship drifts silently into the dark.',
+};
+function showGameOver(reason) {
   state.gameOver = true;
+  document.body.classList.remove('crew-open');
+  document.getElementById('gameover-reason').textContent = GAME_OVER_REASONS[reason];
   document.body.classList.add('game-over');
   document.getElementById('gameover-stats').textContent =
     `Jumps made: ${state.jumps} · Pirates defeated: ${state.piratesDefeated} · Scrap: ${state.scrap}`;
@@ -351,7 +425,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Canvas pointer input: tap-to-jump on the galaxy map, swipe-to-orbit in the main view
-const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel;
+const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel && !state.eventOpen;
 const tapRadius = (e) => (e.pointerType === 'mouse' ? 24 : 44);
 
 async function jumpTo(id) {
@@ -369,13 +443,90 @@ async function jumpTo(id) {
   const node = await galaxyMap.travelTo(id);
   state.jumps += 1;
   applyPlanet(node.planet);
+  const notes = arrivalUpkeep();
   renderHud();
   if (Math.random() < PIRATE_CHANCE) {
     toast(`Arrived at ${node.name} — pirates detected!`);
     startPirateFight();
-  } else {
-    toast(`Arrived at ${node.name}`);
+    return;
   }
+  toast([`Arrived at ${node.name}`, ...notes].join(' · '));
+  if (Math.random() < CREW_EVENT_CHANCE) {
+    await runEvent(pickCrewEvent());
+    renderHud();
+    if (crew.count === 0) showGameOver('crew');
+  }
+}
+
+/** Passive effects on every jump: shield regen, engineer repairs, crew recovery. */
+function arrivalUpkeep() {
+  const notes = [];
+  regenShields(SHIELD_REGEN_PER_JUMP);
+  const repair = Math.min(crew.repairPerJump, 100 - state.hull);
+  if (repair > 0) {
+    state.hull += repair;
+    notes.push(`+${repair} hull repaired`);
+  }
+  for (const m of crew.members.filter((x) => x.status === 'injured')) {
+    if (chance(RECOVERY_PER_JUMP)) {
+      crew.heal(m);
+      notes.push(`${m.name} recovered`);
+    }
+  }
+  return notes;
+}
+
+// Crew event dialog
+const eventUi = {
+  root: document.getElementById('event'),
+  title: document.getElementById('event-title'),
+  text: document.getElementById('event-text'),
+  choices: document.getElementById('event-choices'),
+};
+
+function eventButton(label, onChoose, disabledReason = null) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = label;
+  if (disabledReason) {
+    btn.disabled = true;
+    const why = document.createElement('small');
+    why.textContent = disabledReason;
+    btn.append(why);
+  }
+  onPress(btn, onChoose);
+  return btn;
+}
+
+/** Shows an event, lets the player choose, then shows the outcome. */
+function runEvent(event) {
+  state.eventOpen = true;
+  const ctx = { crew, state };
+  eventUi.title.textContent = event.title;
+  eventUi.text.textContent = event.text;
+  eventUi.root.classList.add('show');
+  return new Promise((resolve) => {
+    const close = () => {
+      eventUi.root.classList.remove('show');
+      state.eventOpen = false;
+      resolve();
+    };
+    const buttons = event.choices.map((choice) =>
+      eventButton(
+        choice.label,
+        () => {
+          eventUi.text.textContent = choice.run(ctx);
+          renderHud();
+          const done = eventButton(crew.count === 0 ? 'Continue…' : 'Continue', close);
+          eventUi.choices.replaceChildren(done);
+          done.focus();
+        },
+        choice.available?.(ctx)
+      )
+    );
+    eventUi.choices.replaceChildren(...buttons);
+    buttons.find((b) => !b.disabled)?.focus();
+  });
 }
 
 galaxyMap.onSelect = (id) => {

@@ -219,13 +219,20 @@ class Effects {
  * pirate returns fire after each player shot until one side is destroyed.
  */
 export class Combat {
-  constructor({ scene, playerShip, enemyPosition, state, ui, onHullChange, onEnd }) {
+  /**
+   * @param onPlayerHit (dmg) => { message, outcome } where outcome is null,
+   *   'destroyed' (hull gone) or 'crew' (no crew left).
+   * @param enemyHitChance () => probability the pirate's shot lands.
+   * @param onTurnEnd () => called after each full exchange (passive regen).
+   */
+  constructor({ scene, playerShip, enemyPosition, ui, onPlayerHit, enemyHitChance, onTurnEnd, onEnd }) {
     this.scene = scene;
     this.playerShip = playerShip;
     this.enemyPosition = enemyPosition;
-    this.state = state;
     this.ui = ui;
-    this.onHullChange = onHullChange;
+    this.onPlayerHit = onPlayerHit;
+    this.enemyHitChance = enemyHitChance;
+    this.onTurnEnd = onTurnEnd;
     this.onEnd = onEnd;
     this.effects = new Effects(scene);
     this.active = false;
@@ -272,8 +279,8 @@ export class Combat {
   }
 
   /** Fires a laser from `shooter` at `target`; resolves to whether it hit. */
-  async fire(shooter, target, color) {
-    const hit = Math.random() < HIT_CHANCE;
+  async fire(shooter, target, color, hitChance = HIT_CHANCE) {
+    const hit = Math.random() < hitChance;
     const from = this.muzzle(shooter);
     const to = target.position.clone();
     if (hit) {
@@ -322,26 +329,32 @@ export class Combat {
 
     // Enemy turn
     await wait(650);
-    const enemyHit = await this.fire(this.enemy, this.playerShip, ENEMY_LASER);
+    const enemyHit = await this.fire(this.enemy, this.playerShip, ENEMY_LASER, this.enemyHitChance());
+    let outcome = null;
     if (enemyHit) {
-      const dmg = randInt(8, 16);
-      this.state.hull = Math.max(this.state.hull - dmg, 0);
-      this.onHullChange(dmg);
-      this.log(`Pirate laser hits! Hull −${dmg}.`);
+      const hit = this.onPlayerHit(randInt(8, 16));
+      outcome = hit.outcome;
+      this.log(hit.message);
     } else {
       this.log('The pirate fires and misses.');
     }
 
-    if (this.state.hull <= 0) {
+    if (outcome === 'destroyed') {
       await wait(300);
       this.effects.explosion(this.playerShip.position, 0xff8866);
       this.playerShip.visible = false;
       this.log('Hull breach! Your ship is destroyed.');
       await wait(1600);
-      this.finish({ result: 'lose' });
+      this.finish({ result: 'lose', reason: 'pirates' });
+      return;
+    }
+    if (outcome === 'crew') {
+      await wait(1600);
+      this.finish({ result: 'lose', reason: 'crew' });
       return;
     }
 
+    this.onTurnEnd();
     await wait(250);
     this.busy = false;
     this.ui.attack.disabled = false;

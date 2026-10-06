@@ -1,19 +1,24 @@
+// Time of the last handled press, shared by every onPress button. The click a
+// browser sends after a tap can land on a *different* button when the UI
+// re-renders under the finger (e.g. a choice replaced by "Continue"), so the
+// follow-up click is swallowed globally, not per element.
+let lastPressAt = -Infinity;
+const CLICK_SUPPRESS_MS = 700;
+
 /**
  * Fires `handler` as soon as a button is pressed (pointerdown) instead of
  * waiting for the click that follows release, which feels laggy on touch.
- * The click that follows a press is swallowed so the action never runs twice;
- * clicks with no preceding press (keyboard Enter/Space) still activate it.
+ * Clicks with no preceding press (keyboard Enter/Space) still activate it.
  */
 export function onPress(element, handler) {
-  let lastPress = -Infinity;
   element.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
-    lastPress = performance.now();
+    lastPressAt = performance.now();
     if (!element.disabled) handler(e);
   });
   element.addEventListener('click', (e) => {
-    if (performance.now() - lastPress < 1000) return;
+    if (performance.now() - lastPressAt < CLICK_SUPPRESS_MS) return;
     if (!element.disabled) handler(e);
   });
 }

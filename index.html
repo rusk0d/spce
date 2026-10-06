@@ -20,15 +20,26 @@
 
   <div id="hud">
     <div class="stat"><span class="label">Hull</span><span class="value" id="hud-hull">100</span></div>
+    <div class="stat shields"><span class="label">Shields</span><span class="value" id="hud-shields">40</span></div>
     <div class="stat"><span class="label">Fuel</span><span class="value" id="hud-fuel">10</span></div>
     <div class="stat"><span class="label">Scrap</span><span class="value" id="hud-scrap">0</span></div>
     <div class="stat system"><span class="label">System</span><span class="value" id="hud-system"></span></div>
   </div>
 
+  <aside id="crew" aria-label="Crew">
+    <div class="crew-head"><span class="label">Crew</span><span class="crew-count" id="crew-count"></span></div>
+    <ul id="crew-list"></ul>
+    <div class="crew-effects" id="crew-effects"></div>
+    <p class="crew-tip" id="crew-tip"></p>
+  </aside>
+
   <div id="map-labels"></div>
   <div id="controls">
     <p id="help"></p>
-    <button id="map-btn" type="button"><span id="map-btn-text">Galaxy Map</span><kbd>M</kbd></button>
+    <div class="control-row">
+      <button id="crew-btn" type="button" aria-controls="crew" aria-expanded="false">Crew <span class="crew-btn-count" id="crew-btn-count"></span></button>
+      <button id="map-btn" type="button"><span id="map-btn-text">Galaxy Map</span><kbd>M</kbd></button>
+    </div>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
 
@@ -42,10 +53,18 @@
     <button id="attack-btn" type="button">Attack</button>
   </div>
 
+  <div id="event" role="dialog" aria-modal="true" aria-labelledby="event-title">
+    <div class="event-card">
+      <h2 id="event-title"></h2>
+      <p id="event-text" aria-live="polite"></p>
+      <div class="event-choices" id="event-choices"></div>
+    </div>
+  </div>
+
   <div id="gameover" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
     <div class="gameover-card">
       <h1 id="gameover-title">Game Over</h1>
-      <p>Your ship was destroyed by pirates.</p>
+      <p id="gameover-reason"></p>
       <p class="gameover-stats" id="gameover-stats"></p>
       <button id="restart-btn" type="button">Restart</button>
     </div>
