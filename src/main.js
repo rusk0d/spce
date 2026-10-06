@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { createShip } from './ship.js';
+import { createShip, createStation } from './ship.js';
 import { generateGalaxy, GalaxyMap } from './galaxy.js';
 import { Combat } from './combat.js';
 import { onPress, SwipeTracker } from './input.js';
 import { Crew, CrewPanel } from './crew.js';
 import { pickCrewEvent } from './events.js';
+import { Shop } from './shop.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -181,10 +182,12 @@ function applyPlanet(spec) {
 }
 
 // Game state + HUD
-const SHIELD_MAX = 40;
 const state = {
   hull: 100,
-  shields: SHIELD_MAX,
+  maxHull: 100,
+  shields: 40,
+  maxShields: 40, // raised by Reactor Upgrades
+
   fuel: 10,
   scrap: 0,
   jumps: 0,
@@ -201,6 +204,7 @@ const RECOVERY_PER_JUMP = 0.25; // chance an injured crew member recovers each j
 const hud = {
   hull: document.getElementById('hud-hull'),
   shields: document.getElementById('hud-shields'),
+  shieldsMax: document.getElementById('hud-shields-max'),
   fuel: document.getElementById('hud-fuel'),
   scrap: document.getElementById('hud-scrap'),
   system: document.getElementById('hud-system'),
@@ -209,11 +213,13 @@ const hud = {
 function renderHud() {
   hud.hull.textContent = state.hull;
   hud.shields.textContent = Math.floor(state.shields);
+  hud.shieldsMax.textContent = `/${state.maxShields}`;
   hud.fuel.textContent = state.fuel;
   hud.scrap.textContent = state.scrap;
   hud.system.textContent = galaxyMap.current.name;
 }
 const chance = (p) => Math.random() < p;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function flashStat(valueEl) {
   const stat = valueEl.closest('.stat');
@@ -249,7 +255,7 @@ onPress(crewBtn, () => {
 });
 
 function regenShields(base) {
-  state.shields = Math.min(SHIELD_MAX, state.shields + base * crew.shieldRegenMultiplier);
+  state.shields = Math.min(state.maxShields, state.shields + base * crew.shieldRegenMultiplier);
 }
 
 // Galaxy map lives far below the planet scene; the camera flies between the two
@@ -342,12 +348,47 @@ function setView(next) {
 controls.help.textContent = helpText.main;
 
 const canToggleMap = () =>
-  !galaxyMap.travel && !combat.active && !state.gameOver && !state.eventOpen && view !== 'combat';
+  !galaxyMap.travel && !combat.active && !state.gameOver && !modalOpen() && view !== 'combat';
 function toggleMap() {
   if (!canToggleMap()) return;
   setView(view === 'map' ? 'main' : 'map');
 }
 onPress(controls.mapBtn, toggleMap);
+
+// Friendly space station (shown in the main view while docked) and its shop
+const station = createStation();
+station.position.set(-6, 4.6, 10); // above and behind the ship, clear of the HUD and crew panel
+station.rotation.set(0.35, 0, -0.25);
+station.visible = false;
+scene.add(station);
+
+const shopBtn = document.getElementById('shop-btn');
+function updateStation() {
+  const docked = galaxyMap.current.station;
+  station.visible = docked;
+  document.body.classList.toggle('at-station', docked);
+}
+
+const shop = new Shop({
+  el: document.getElementById('shop'),
+  state,
+  onOpen: () => {
+    document.body.classList.add('shop-open');
+    document.body.classList.remove('crew-open');
+  },
+  onPurchase: () => renderHud(),
+  onClose: (viaKeyboard) => {
+    document.body.classList.remove('shop-open');
+    if (viaKeyboard) shopBtn.focus({ preventScroll: true });
+  },
+});
+onPress(shopBtn, () => {
+  if (!galaxyMap.current.station || modalOpen() || galaxyMap.travel || view !== 'main') return;
+  shop.open(galaxyMap.current.name);
+});
+
+const modalOpen = () => state.eventOpen || shop.isOpen;
+updateStation();
 
 // Pirate encounters
 const combat = new Combat({
@@ -399,7 +440,7 @@ const combat = new Combat({
 
 async function startPirateFight() {
   setView('combat');
-  await new Promise((resolve) => setTimeout(resolve, 1500)); // let the camera settle
+  await wait(1500); // let the camera settle
   combat.start();
 }
 
@@ -420,12 +461,16 @@ function showGameOver(reason) {
 onPress(document.getElementById('restart-btn'), () => window.location.reload());
 
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && shop.isOpen) {
+    shop.close(true);
+    return;
+  }
   if (e.repeat || e.key.toLowerCase() !== 'm') return;
   toggleMap();
 });
 
 // Canvas pointer input: tap-to-jump on the galaxy map, swipe-to-orbit in the main view
-const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel && !state.eventOpen;
+const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel && !modalOpen();
 const tapRadius = (e) => (e.pointerType === 'mouse' ? 24 : 44);
 
 async function jumpTo(id) {
@@ -445,6 +490,15 @@ async function jumpTo(id) {
   applyPlanet(node.planet);
   const notes = arrivalUpkeep();
   renderHud();
+  updateStation();
+  if (node.station) {
+    // Friendly station: no pirates or crew events, just dock and shop
+    toast([`Docking at ${node.name} Station`, ...notes].join(' · '));
+    setView('main');
+    await wait(1500); // let the camera settle on the station
+    shop.open(node.name);
+    return;
+  }
   if (Math.random() < PIRATE_CHANCE) {
     toast(`Arrived at ${node.name} — pirates detected!`);
     startPirateFight();
@@ -462,7 +516,7 @@ async function jumpTo(id) {
 function arrivalUpkeep() {
   const notes = [];
   regenShields(SHIELD_REGEN_PER_JUMP);
-  const repair = Math.min(crew.repairPerJump, 100 - state.hull);
+  const repair = Math.min(crew.repairPerJump, state.maxHull - state.hull);
   if (repair > 0) {
     state.hull += repair;
     notes.push(`+${repair} hull repaired`);
@@ -595,6 +649,7 @@ renderer.setAnimationLoop((now) => {
   }
 
   galaxyMap.update(dt, t);
+  if (station.visible) station.userData.update(t);
   combat.update(dt, t);
   const showLabels = view === 'map' && !cameraTween;
   if (showLabels) galaxyMap.projectNodes(camera, window.innerWidth, window.innerHeight);

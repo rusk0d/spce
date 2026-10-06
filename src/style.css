@@ -100,6 +100,13 @@ button {
 
 .stat.shields .value {
   color: #9fe8ff;
+  white-space: nowrap;
+}
+
+.value-max {
+  font-size: 0.6em;
+  font-weight: 400;
+  color: var(--text-dim);
 }
 
 .stat.hit {
@@ -128,7 +135,8 @@ button {
 }
 
 body.in-combat #controls,
-body.game-over #controls {
+body.game-over #controls,
+body.shop-open #controls {
   opacity: 0;
   pointer-events: none;
 }
@@ -154,12 +162,13 @@ body.game-over #controls {
 }
 
 #map-btn,
-#crew-btn {
+#crew-btn,
+#shop-btn {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 0 20px;
+  padding: 0 clamp(12px, 4vw, 20px);
   border: 1px solid rgba(120, 200, 255, 0.5);
   border-radius: 999px;
   background: rgba(10, 30, 50, 0.75);
@@ -174,17 +183,20 @@ body.game-over #controls {
 }
 
 #map-btn:hover,
-#crew-btn:hover {
+#crew-btn:hover,
+#shop-btn:hover {
   background: rgba(20, 50, 80, 0.85);
 }
 
 #map-btn:active,
-#crew-btn:active {
+#crew-btn:active,
+#shop-btn:active {
   transform: scale(0.97);
 }
 
 #map-btn:focus-visible,
-#crew-btn:focus-visible {
+#crew-btn:focus-visible,
+#shop-btn:focus-visible {
   outline: 2px solid #9fe8ff;
   outline-offset: 2px;
 }
@@ -196,6 +208,17 @@ kbd {
   font-family: inherit;
   font-size: 0.8em;
   color: #9fd4f2;
+}
+
+/* Shop button: only while docked at a station in the ship view */
+#shop-btn {
+  display: none;
+  border-color: rgba(255, 197, 107, 0.7);
+  color: #ffd59a;
+}
+
+body.at-station:not(.map-open):not(.in-combat) #shop-btn {
+  display: inline-flex;
 }
 
 #crew-btn {
@@ -275,6 +298,17 @@ kbd {
   color: rgba(200, 225, 240, 0.45);
   white-space: nowrap;
   text-shadow: 0 0 4px #000, 0 0 2px #000;
+}
+
+.station-badge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 197, 107, 0.7);
+  border-radius: 4px;
+  font-size: 0.75em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffc56b;
 }
 
 .map-label.crowded {
@@ -575,6 +609,203 @@ kbd {
   color: rgba(159, 212, 242, 0.6);
 }
 
+/* ---------- Sector shop ---------- */
+
+#shop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s, visibility 0.25s;
+}
+
+#shop.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.shop-card {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(14px, 4vw, 20px);
+  border: 1px solid rgba(255, 197, 107, 0.55);
+  border-radius: 12px;
+  background: rgba(14, 16, 26, 0.95);
+}
+
+.shop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.shop-header h2 {
+  font-size: clamp(18px, 5vw, 22px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffc56b;
+}
+
+.shop-station {
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+}
+
+.shop-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 6px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.shop-scrap {
+  font-size: var(--fs-value);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shop-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(20, 30, 48, 0.7);
+}
+
+.shop-item.bought {
+  animation: bought 0.5s ease-out;
+}
+
+@keyframes bought {
+  0% { border-color: #ffc56b; background: rgba(90, 70, 20, 0.6); }
+  100% { border-color: rgba(120, 200, 255, 0.25); background: rgba(20, 30, 48, 0.7); }
+}
+
+.shop-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shop-name {
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.shop-effect {
+  font-size: var(--fs-small);
+  color: #9fe8ff;
+}
+
+.shop-stat {
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Big, thumb-friendly buy buttons */
+.shop-buy {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  min-height: 52px;
+  padding: 6px 12px;
+  border: 1px solid #ffc56b;
+  border-radius: 8px;
+  background: #8a5a12;
+  color: #fff;
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.08s, opacity 0.15s;
+}
+
+.shop-buy:hover:not(:disabled) {
+  background: #a56c17;
+}
+
+.shop-buy:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.shop-buy:focus-visible,
+#shop-close:focus-visible {
+  outline: 2px solid #9fe8ff;
+  outline-offset: 2px;
+}
+
+.shop-buy:disabled {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: default;
+}
+
+.shop-price {
+  font-size: 0.8em;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.shop-item.unavailable .shop-buy-label {
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+.shop-status {
+  min-height: 1.4em;
+  margin: 12px 0;
+  font-size: var(--fs-small);
+  color: #ffd59a;
+  text-align: center;
+}
+
+#shop-close {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(120, 200, 255, 0.5);
+  border-radius: 8px;
+  background: rgba(20, 50, 80, 0.8);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#shop-close:hover {
+  background: rgba(30, 70, 110, 0.9);
+}
+
 /* ---------- Event dialog ---------- */
 
 #event {
@@ -717,6 +948,25 @@ kbd {
     letter-spacing: 0.08em;
   }
 
+  /* Shop becomes a bottom sheet within thumb reach */
+  #shop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .shop-card {
+    width: 100%;
+    max-height: 85%;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .shop-buy {
+    min-width: 104px;
+    min-height: 56px;
+  }
+
   /* Crew pop-up sits above the bottom controls */
   #crew {
     top: auto;
@@ -748,6 +998,43 @@ kbd {
 
   .crew-tip {
     display: none;
+  }
+
+  /* Landscape phones: compact rows so all three items fit without scrolling */
+  .shop-card {
+    width: min(560px, 100%);
+    padding: 10px 14px;
+  }
+
+  .shop-header {
+    margin-bottom: 8px;
+  }
+
+  .shop-items {
+    gap: 6px;
+  }
+
+  .shop-item {
+    padding: 6px 10px;
+  }
+
+  .shop-info {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 10px;
+  }
+
+  .shop-buy {
+    min-height: 44px;
+  }
+
+  .shop-status {
+    margin: 6px 0;
+  }
+
+  #shop-close {
+    min-height: 44px;
   }
 
   /* Crew pop-up docks top-right, between the HUD row and the controls */

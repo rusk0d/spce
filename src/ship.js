@@ -102,3 +102,76 @@ export function createPirateShip() {
 
   return ship;
 }
+
+// Low-poly friendly space station: hub, docking ring on spokes, solar arrays,
+// and blinking running lights (animate via station.userData.update).
+export function createStation() {
+  const station = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0xc9ced6, flatShading: true, metalness: 0.2, roughness: 0.6 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0xffb347, flatShading: true, metalness: 0.3, roughness: 0.5 });
+  const panelMat = new THREE.MeshStandardMaterial({
+    color: 0x1f3d7a,
+    emissive: 0x0a1a3a,
+    flatShading: true,
+    metalness: 0.5,
+    roughness: 0.3,
+    side: THREE.DoubleSide,
+  });
+
+  const spinning = new THREE.Group();
+  station.add(spinning);
+
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 3.2, 8), hullMat);
+  spinning.add(hub);
+  for (const y of [-1.8, 1.8]) {
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.8, 8), trimMat);
+    cap.position.y = y;
+    if (y < 0) cap.rotation.x = Math.PI;
+    spinning.add(cap);
+  }
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.35, 6, 16), hullMat);
+  ring.rotation.x = Math.PI / 2;
+  spinning.add(ring);
+
+  for (let i = 0; i < 4; i++) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.18, 0.18), trimMat);
+    spoke.rotation.y = (i * Math.PI) / 4;
+    spinning.add(spoke);
+  }
+
+  // Solar arrays stay fixed while the habitat ring spins
+  for (const side of [-1, 1]) {
+    const mast = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 2.4), hullMat);
+    mast.position.set(0, 2.6, side * 1.2);
+    station.add(mast);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.4), panelMat);
+    panel.position.set(0, 2.6, side * 3.4);
+    panel.rotation.x = -Math.PI / 2;
+    station.add(panel);
+  }
+
+  const lights = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const light = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.12, 0),
+      new THREE.MeshBasicMaterial({ color: i % 2 ? 0x66ff99 : 0xff5566 })
+    );
+    light.position.set(Math.cos(a) * 3.4, 0.4, Math.sin(a) * 3.4);
+    spinning.add(light);
+    lights.push(light);
+  }
+
+  const glow = new THREE.PointLight(0xffd59a, 4, 12);
+  glow.position.set(0, 0, 3);
+  station.add(glow);
+
+  station.userData.update = (t) => {
+    spinning.rotation.y = t * 0.25;
+    lights.forEach((l, i) => {
+      l.visible = Math.sin(t * 3 + i * 1.3) > -0.2;
+    });
+  };
+  return station;
+}

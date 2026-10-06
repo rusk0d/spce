@@ -20,7 +20,7 @@
 
   <div id="hud">
     <div class="stat"><span class="label">Hull</span><span class="value" id="hud-hull">100</span></div>
-    <div class="stat shields"><span class="label">Shields</span><span class="value" id="hud-shields">40</span></div>
+    <div class="stat shields"><span class="label">Shields</span><span class="value"><span id="hud-shields">40</span><span class="value-max" id="hud-shields-max">/40</span></span></div>
     <div class="stat"><span class="label">Fuel</span><span class="value" id="hud-fuel">10</span></div>
     <div class="stat"><span class="label">Scrap</span><span class="value" id="hud-scrap">0</span></div>
     <div class="stat system"><span class="label">System</span><span class="value" id="hud-system"></span></div>
@@ -38,6 +38,7 @@
     <p id="help"></p>
     <div class="control-row">
       <button id="crew-btn" type="button" aria-controls="crew" aria-expanded="false">Crew <span class="crew-btn-count" id="crew-btn-count"></span></button>
+      <button id="shop-btn" type="button">Shop</button>
       <button id="map-btn" type="button"><span id="map-btn-text">Galaxy Map</span><kbd>M</kbd></button>
     </div>
   </div>
@@ -51,6 +52,24 @@
     <div class="hp-bar"><div class="hp-fill" id="enemy-hp-fill"></div></div>
     <div class="combat-log" id="combat-log"></div>
     <button id="attack-btn" type="button">Attack</button>
+  </div>
+
+  <div id="shop" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+    <div class="shop-card">
+      <header class="shop-header">
+        <div>
+          <h2 id="shop-title">Sector Shop</h2>
+          <p class="shop-station" id="shop-station"></p>
+        </div>
+        <div class="shop-balance" aria-label="Scrap available">
+          <span class="label">Scrap</span>
+          <span class="shop-scrap" id="shop-scrap">0</span>
+        </div>
+      </header>
+      <ul class="shop-items" id="shop-items"></ul>
+      <p class="shop-status" id="shop-status" role="status" aria-live="polite"></p>
+      <button id="shop-close" type="button">Undock</button>
+    </div>
   </div>
 
   <div id="event" role="dialog" aria-modal="true" aria-labelledby="event-title">

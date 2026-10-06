@@ -31,6 +31,13 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
   crew can be injured, lost, healed or recruited (up to 6). Injured crew may
   also recover on their own between jumps.
 - Game Over when the hull is destroyed **or** the whole crew is lost.
+- Space stations: 1–2 systems per galaxy (one always within two jumps of the
+  start) are friendly stations, marked on the map with a gold diamond and a
+  STATION tag. Docking is safe (no pirates or crew events) and opens the
+  **Sector Shop**; reopen it with the **Shop** button while docked:
+  - Fuel Cell — 3 scrap for +1 Fuel
+  - Hull Repair — 5 scrap for +10 Hull (up to max)
+  - Reactor Upgrade — 50 scrap to permanently raise max Shields by 1
 
 ## Mobile
 
@@ -52,8 +59,9 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
 - `src/galaxy.js` — galaxy graph generation and the 3D map view
 - `src/crew.js` — crew model, role bonuses and the crew panel
 - `src/events.js` — star-node crew events
+- `src/shop.js` — Sector Shop catalogue and panel
 - `src/combat.js` — pirate encounter: turn logic, lasers, hit flashes, explosions
-- `src/ship.js` — low-poly player ship and pirate raider meshes
+- `src/ship.js` — low-poly player ship, pirate raider and space station meshes
 - `src/textures.js` — shared glow sprite texture
 - `src/input.js` — press-on-pointerdown buttons and throttled swipe tracking
 

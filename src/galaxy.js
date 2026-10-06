@@ -4,7 +4,7 @@ import { makeGlowTexture } from './textures.js';
 
 const SYSTEM_NAMES = [
   'Kepler Reach', 'Vesta Prime', 'Orion Drift', 'Tauri Gate', 'Nyx Hollow', 'Helios IV',
-  'Cygnus Rest', 'Lyra Verge', 'Draco Spur', 'Zeta Cross', 'Antares Fold', 'Mira Station',
+  'Cygnus Rest', 'Lyra Verge', 'Draco Spur', 'Zeta Cross', 'Antares Fold', 'Mira Expanse',
 ];
 
 function shuffle(list) {
@@ -89,7 +89,34 @@ export function generateGalaxy() {
     if (candidate && candidate.d < 32) link(n.id, candidate.id);
   }
 
+  placeStations(nodes);
   return { nodes, edges };
+}
+
+/**
+ * Marks 1–2 systems as friendly space stations (never the start). One is
+ * always within two jumps of the start so a shop is reachable early.
+ */
+function placeStations(nodes) {
+  for (const n of nodes) n.station = false;
+  const hops = new Map([[0, 0]]);
+  const queue = [0];
+  while (queue.length) {
+    const id = queue.shift();
+    for (const next of nodes[id].neighbors) {
+      if (!hops.has(next)) {
+        hops.set(next, hops.get(id) + 1);
+        queue.push(next);
+      }
+    }
+  }
+  const pickFrom = (list) => list[Math.floor(Math.random() * list.length)];
+  const near = nodes.filter((n) => n.id !== 0 && hops.get(n.id) <= 2);
+  pickFrom(near).station = true;
+  if (nodes.length >= 7) {
+    const rest = nodes.filter((n) => n.id !== 0 && !n.station);
+    pickFrom(rest).station = true;
+  }
 }
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -105,6 +132,7 @@ export class GalaxyMap {
     this.labelContainer = labelContainer;
 
     const glowTexture = makeGlowTexture();
+    this.stationMarkers = [];
     this.nodeViews = galaxy.nodes.map((node) => {
       const starColor = new THREE.Color().setHSL(node.planet.hue, 0.7, 0.7);
       const star = new THREE.Mesh(
@@ -123,11 +151,27 @@ export class GalaxyMap {
       );
       glow.scale.setScalar(7);
       star.add(glow);
+      if (node.station) {
+        const marker = new THREE.Mesh(
+          new THREE.OctahedronGeometry(2.2, 0),
+          new THREE.MeshBasicMaterial({ color: 0xffc56b, wireframe: true, transparent: true, opacity: 0.85 })
+        );
+        marker.userData.spin = true;
+        star.add(marker);
+        this.stationMarkers.push(marker);
+      }
       this.group.add(star);
 
       const label = document.createElement('div');
       label.className = 'map-label';
       label.textContent = node.name;
+      if (node.station) {
+        label.classList.add('station');
+        const badge = document.createElement('span');
+        badge.className = 'station-badge';
+        badge.textContent = 'Station';
+        label.append(badge);
+      }
       // Reachable labels are tappable too: a bigger target than the star itself
       label.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -221,6 +265,7 @@ export class GalaxyMap {
 
   update(dt, t) {
     this.currentMarker.rotation.z = t * 0.8;
+    for (const m of this.stationMarkers) m.rotation.y = t * 0.6;
     for (const v of this.nodeViews) {
       const reachable = !this.travel && this.isReachable(v.node.id);
       const pulse = reachable ? 1 + 0.25 * Math.sin(t * 4 + v.node.id) : 1;
