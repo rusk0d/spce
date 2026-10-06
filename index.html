@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
   <title>SPCE</title>
   <link rel="stylesheet" href="src/style.css" />
   <script type="importmap">
@@ -25,7 +26,10 @@
   </div>
 
   <div id="map-labels"></div>
-  <div id="hint">M — Galaxy map</div>
+  <div id="controls">
+    <p id="help"></p>
+    <button id="map-btn" type="button"><span id="map-btn-text">Galaxy Map</span><kbd>M</kbd></button>
+  </div>
   <div id="toast" role="status" aria-live="polite"></div>
 
   <div id="combat" aria-live="polite">

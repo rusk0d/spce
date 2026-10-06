@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createPirateShip } from './ship.js';
 import { makeGlowTexture } from './textures.js';
+import { onPress } from './input.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -232,7 +233,7 @@ export class Combat {
     this.enemy = null;
     this.playerHomeQuat = playerShip.quaternion.clone();
     this.playerTargetQuat = null;
-    this.ui.attack.addEventListener('click', () => this.attack());
+    onPress(this.ui.attack, () => this.attack());
   }
 
   async start() {

@@ -123,20 +123,20 @@ export class GalaxyMap {
       );
       glow.scale.setScalar(7);
       star.add(glow);
-      // Larger invisible sphere so nodes are easy to click
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(3.5, 8, 8), new THREE.MeshBasicMaterial({ visible: false }));
-      hit.userData.nodeId = node.id;
-      star.add(hit);
       this.group.add(star);
 
       const label = document.createElement('div');
       label.className = 'map-label';
       label.textContent = node.name;
+      // Reachable labels are tappable too: a bigger target than the star itself
+      label.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.onSelect?.(node.id);
+      });
       labelContainer.appendChild(label);
 
-      return { node, star, glow, hit, label };
+      return { node, star, glow, label, screen: new THREE.Vector2() };
     });
-    this.hitTargets = this.nodeViews.map((v) => v.hit);
 
     this.edgeViews = galaxy.edges.map(([a, b]) => {
       const geometry = new THREE.BufferGeometry().setFromPoints([
@@ -237,18 +237,75 @@ export class GalaxyMap {
     }
   }
 
-  /** Positions HTML labels over their nodes; hides them when `visible` is false. */
-  updateLabels(camera, width, height, visible) {
-    this.labelContainer.style.opacity = visible ? 1 : 0;
-    if (!visible) return;
+  /** Projects every node to screen pixels (cached for labels and picking). */
+  projectNodes(camera, width, height) {
     const v = new THREE.Vector3();
     for (const view of this.nodeViews) {
       view.star.getWorldPosition(v);
       v.project(camera);
-      const x = (v.x * 0.5 + 0.5) * width;
-      const y = (-v.y * 0.5 + 0.5) * height;
-      view.label.style.transform = `translate(-50%, 0) translate(${x}px, ${y + 18}px)`;
-      view.label.style.display = v.z < 1 ? '' : 'none';
+      view.screen.set((v.x * 0.5 + 0.5) * width, (-v.y * 0.5 + 0.5) * height);
+      view.onScreen = v.z < 1;
     }
   }
+
+  /**
+   * Returns the id of the node nearest to a screen point within `radius` px,
+   * preferring reachable systems so a fat-finger tap lands on a valid jump.
+   */
+  nodeAt(x, y, radius) {
+    let best = null;
+    for (const view of this.nodeViews) {
+      if (!view.onScreen) continue;
+      const d = view.screen.distanceTo({ x, y }) - (this.isReachable(view.node.id) ? radius * 0.25 : 0);
+      if (d <= radius && (!best || d < best.d)) best = { id: view.node.id, d };
+    }
+    return best ? best.id : null;
+  }
+
+  /**
+   * Positions HTML labels next to their nodes. Each label tries below, above,
+   * right, then left of its star and is clamped inside the viewport; labels
+   * for the current and reachable systems are placed first, and any label
+   * that still collides is faded out instead of drawing over another.
+   */
+  updateLabels(visible, width = 0, height = 0) {
+    // visibility (not just opacity) so hidden labels can't intercept taps
+    this.labelContainer.classList.toggle('visible', visible);
+    if (!visible) return;
+    const sizeKey = `${width}x${height}:${this.currentId}`;
+    if (this.labelSizeKey !== sizeKey) {
+      this.labelSizeKey = sizeKey;
+      for (const v of this.nodeViews) v.labelSize = [v.label.offsetWidth, v.label.offsetHeight];
+    }
+    const margin = 6;
+    const gap = 8; // clearance from the star's centre (labels carry their own padding)
+    const placed = [];
+    const overlaps = (r) => placed.some((o) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h);
+    const rank = (v) => (v.node.id === this.currentId ? 0 : this.isReachable(v.node.id) ? 1 : 2);
+    // Stars themselves are obstacles too, so labels never cover a node
+    for (const v of this.nodeViews) placed.push({ x: v.screen.x - 6, y: v.screen.y - 6, w: 12, h: 12 });
+
+    for (const v of [...this.nodeViews].sort((a, b) => rank(a) - rank(b))) {
+      const [w, h] = v.labelSize;
+      const { x, y } = v.screen;
+      const candidates = [
+        [x - w / 2, y + gap],
+        [x - w / 2, y - gap - h],
+        [x + gap, y - h / 2],
+        [x - gap - w, y - h / 2],
+      ].map(([lx, ly]) => ({
+        x: Math.min(Math.max(lx, margin), width - w - margin),
+        y: Math.min(Math.max(ly, margin), height - h - margin),
+        w,
+        h,
+      }));
+      const spot = candidates.find((r) => !overlaps(r));
+      const rect = spot ?? candidates[0];
+      placed.push(rect);
+      v.label.style.transform = `translate(${rect.x}px, ${rect.y}px)`;
+      v.label.style.display = v.onScreen ? '' : 'none';
+      v.label.classList.toggle('crowded', !spot);
+    }
+  }
+
 }

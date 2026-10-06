@@ -2,10 +2,14 @@ import * as THREE from 'three';
 import { createShip } from './ship.js';
 import { generateGalaxy, GalaxyMap } from './galaxy.js';
 import { Combat } from './combat.js';
+import { onPress, SwipeTracker } from './input.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Touch devices are usually phones with dense screens and weaker GPUs: cap the
+// render resolution lower there to keep the frame rate steady.
+const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isCoarsePointer ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
@@ -182,7 +186,6 @@ const hud = {
   fuel: document.getElementById('hud-fuel'),
   scrap: document.getElementById('hud-scrap'),
   system: document.getElementById('hud-system'),
-  hint: document.getElementById('hint'),
   toast: document.getElementById('toast'),
 };
 function renderHud() {
@@ -211,37 +214,87 @@ const views = {
   map: {
     position: MAP_CENTER.clone().add(new THREE.Vector3(0, 78, 26)),
     target: MAP_CENTER.clone(),
+    maxFit: 1.9, // the map is roughly round, so it needs less pull-back than wide shots
   },
   // Pulled back and to the side so the player ship and the pirate face off across the frame
   combat: { position: new THREE.Vector3(9, 6, 29), target: new THREE.Vector3(7.5, 1.5, 13) },
 };
+const shipBase = ship.position.clone();
+
+// Swipe-to-orbit around the ship in the main view
+const ORBIT_LIMIT = 0.9; // radians either side of the default angle
+const ORBIT_RAD_PER_PX = 0.004;
+const orbit = { yaw: 0, targetYaw: 0 };
+const swipe = new SwipeTracker({ intervalMs: 32, maxStep: 18 });
+
+/**
+ * Camera pose for a view. Narrow (portrait) screens pull the camera back so
+ * the same content stays in frame; the main view also applies the orbit yaw
+ * around the ship.
+ */
+function viewPose(name) {
+  const base = views[name];
+  const aspect = window.innerWidth / window.innerHeight;
+  const fit = THREE.MathUtils.clamp(1.25 / aspect, 1, base.maxFit ?? 2.4);
+  const position = base.position.clone().sub(base.target).multiplyScalar(fit).add(base.target);
+  const target = base.target.clone();
+  if (name === 'main' && orbit.yaw !== 0) {
+    const up = THREE.Object3D.DEFAULT_UP;
+    position.sub(shipBase).applyAxisAngle(up, orbit.yaw).add(shipBase);
+    target.sub(shipBase).applyAxisAngle(up, orbit.yaw).add(shipBase);
+  }
+  return { position, target };
+}
+
 let view = 'main';
 let cameraTween = null;
-const cameraTarget = views.main.target.clone();
-camera.position.copy(views.main.position);
-camera.lookAt(cameraTarget);
+const cameraTarget = new THREE.Vector3();
+function snapCamera() {
+  const pose = viewPose(view);
+  camera.position.copy(pose.position);
+  cameraTarget.copy(pose.target);
+  camera.lookAt(cameraTarget);
+}
+snapCamera();
 
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+const controls = {
+  mapBtn: document.getElementById('map-btn'),
+  mapBtnText: document.getElementById('map-btn-text'),
+  help: document.getElementById('help'),
+};
+const pointerVerb = isCoarsePointer ? 'Tap' : 'Click';
+const helpText = {
+  main: isCoarsePointer ? 'Swipe to look around the ship' : 'Drag to look around · M for map',
+  map: `${pointerVerb} a linked system to jump (−1 fuel)`,
+  combat: '',
+};
 
 function setView(next) {
   if (next === view && !cameraTween) return;
   view = next;
+  swipe.pointerId = null;
   cameraTween = {
     fromPos: camera.position.clone(),
     fromTarget: cameraTarget.clone(),
-    to: views[next],
+    to: viewPose(next),
     elapsed: 0,
     duration: 1.4,
   };
   document.body.classList.toggle('map-open', next === 'map');
-  const hints = {
-    main: 'M — Galaxy map',
-    map: 'Click a linked system to jump (−1 fuel) · M to close map',
-    combat: '',
-  };
-  hud.hint.textContent = hints[next];
-  hud.hint.hidden = !hints[next];
+  document.body.classList.toggle('in-combat', next === 'combat');
+  controls.help.textContent = helpText[next];
+  controls.mapBtnText.textContent = next === 'map' ? 'Close Map' : 'Galaxy Map';
 }
+controls.help.textContent = helpText.main;
+
+const canToggleMap = () => !galaxyMap.travel && !combat.active && !state.gameOver && view !== 'combat';
+function toggleMap() {
+  if (!canToggleMap()) return;
+  setView(view === 'map' ? 'main' : 'map');
+}
+onPress(controls.mapBtn, toggleMap);
 
 // Pirate encounters
 const combat = new Combat({
@@ -284,39 +337,24 @@ async function startPirateFight() {
 
 function showGameOver() {
   state.gameOver = true;
+  document.body.classList.add('game-over');
   document.getElementById('gameover-stats').textContent =
     `Jumps made: ${state.jumps} · Pirates defeated: ${state.piratesDefeated} · Scrap: ${state.scrap}`;
   document.getElementById('gameover').classList.add('show');
   document.getElementById('restart-btn').focus();
 }
-document.getElementById('restart-btn').addEventListener('click', () => window.location.reload());
+onPress(document.getElementById('restart-btn'), () => window.location.reload());
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat || e.key.toLowerCase() !== 'm') return;
-  if (galaxyMap.travel || combat.active || state.gameOver) return; // finish the jump/fight first
-  setView(view === 'map' ? 'main' : 'map');
+  toggleMap();
 });
 
-// Node picking
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-function pickNode(event) {
-  pointer.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(galaxyMap.hitTargets, false)[0];
-  return hit ? hit.object.userData.nodeId : null;
-}
+// Canvas pointer input: tap-to-jump on the galaxy map, swipe-to-orbit in the main view
 const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel;
+const tapRadius = (e) => (e.pointerType === 'mouse' ? 24 : 44);
 
-canvas.addEventListener('pointermove', (e) => {
-  const id = mapInteractive() ? pickNode(e) : null;
-  canvas.style.cursor = id !== null && galaxyMap.isReachable(id) ? 'pointer' : '';
-});
-
-canvas.addEventListener('click', async (e) => {
-  if (!mapInteractive()) return;
-  const id = pickNode(e);
-  if (id === null || id === galaxyMap.currentId) return;
+async function jumpTo(id) {
   if (!galaxyMap.isReachable(id)) {
     toast('No hyperlane to that system');
     return;
@@ -338,19 +376,48 @@ canvas.addEventListener('click', async (e) => {
   } else {
     toast(`Arrived at ${node.name}`);
   }
+}
+
+galaxyMap.onSelect = (id) => {
+  if (mapInteractive() && id !== galaxyMap.currentId) jumpTo(id);
+};
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (mapInteractive()) {
+    const id = galaxyMap.nodeAt(e.clientX, e.clientY, tapRadius(e));
+    if (id !== null && id !== galaxyMap.currentId) jumpTo(id);
+  } else if (view === 'main' && !cameraTween) {
+    swipe.begin(e);
+  }
 });
 
-// Resize
+canvas.addEventListener('pointermove', (e) => {
+  if (swipe.active) {
+    swipe.move(e);
+    return;
+  }
+  if (e.pointerType !== 'mouse') return;
+  const id = mapInteractive() ? galaxyMap.nodeAt(e.clientX, e.clientY, tapRadius(e)) : null;
+  canvas.style.cursor = id !== null && galaxyMap.isReachable(id) ? 'pointer' : view === 'main' ? 'grab' : '';
+});
+
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  canvas.addEventListener(type, (e) => swipe.end(e));
+}
+
+// Resize (also fires on device rotation)
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (cameraTween) cameraTween.to = viewPose(view);
+  else snapCamera();
 });
 
 // Animate
 const clock = new THREE.Clock();
-const shipBase = ship.position.clone();
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop((now) => {
   const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.elapsedTime;
   planetBody.rotation.y = t * 0.05;
@@ -366,10 +433,20 @@ renderer.setAnimationLoop(() => {
     cameraTarget.lerpVectors(tw.fromTarget, tw.to.target, k);
     camera.lookAt(cameraTarget);
     if (tw.elapsed >= tw.duration) cameraTween = null;
+  } else if (view === 'main') {
+    // Swipe input arrives as small throttled steps; ease toward them for smoothness
+    const dx = swipe.consume(now);
+    if (dx) orbit.targetYaw = THREE.MathUtils.clamp(orbit.targetYaw - dx * ORBIT_RAD_PER_PX, -ORBIT_LIMIT, ORBIT_LIMIT);
+    if (Math.abs(orbit.targetYaw - orbit.yaw) > 1e-4) {
+      orbit.yaw += (orbit.targetYaw - orbit.yaw) * Math.min(dt * 8, 1);
+      snapCamera();
+    }
   }
 
   galaxyMap.update(dt, t);
   combat.update(dt, t);
-  galaxyMap.updateLabels(camera, window.innerWidth, window.innerHeight, view === 'map' && !cameraTween);
+  const showLabels = view === 'map' && !cameraTween;
+  if (showLabels) galaxyMap.projectNodes(camera, window.innerWidth, window.innerHeight);
+  galaxyMap.updateLabels(showLabels, window.innerWidth, window.innerHeight);
   renderer.render(scene, camera);
 });
