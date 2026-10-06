@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createShip } from './ship.js';
+import { generateGalaxy, GalaxyMap } from './galaxy.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -130,65 +132,150 @@ ring.rotation.x = -Math.PI / 2 + 0.35;
 ring.rotation.y = 0.2;
 planet.add(ring);
 
-// Low-poly spaceship, built with its nose along +Z so Object3D.lookAt aims it
-function createShip() {
-  const ship = new THREE.Group();
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0xb8c2cc, flatShading: true, metalness: 0.1, roughness: 0.6 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0xd2453a, flatShading: true, metalness: 0.3, roughness: 0.6 });
-
-  const fuselage = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2.4, 6), hullMat);
-  fuselage.rotation.x = Math.PI / 2; // cone tip (+Y) -> +Z
-  ship.add(fuselage);
-
-  const cockpit = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.28, 0),
-    new THREE.MeshStandardMaterial({ color: 0x66ddff, emissive: 0x114466, flatShading: true, roughness: 0.2 })
-  );
-  cockpit.scale.set(1, 0.7, 1.6);
-  cockpit.position.set(0, 0.3, 0.2);
-  ship.add(cockpit);
-
-  // Swept wings from a flat triangle shape, extruded thin
-  const wingShape = new THREE.Shape();
-  wingShape.moveTo(0, 0.6);
-  wingShape.lineTo(1.6, -0.9);
-  wingShape.lineTo(0, -0.6);
-  wingShape.closePath();
-  const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.08, bevelEnabled: false });
-  wingGeo.rotateX(Math.PI / 2); // lay flat in XZ plane, shape's +Y -> +Z
-  wingGeo.translate(0, 0.04, 0);
-  const rightWing = new THREE.Mesh(wingGeo, accentMat);
-  rightWing.position.x = 0.3;
-  ship.add(rightWing);
-  const leftWing = rightWing.clone();
-  leftWing.scale.x = -1;
-  leftWing.position.x = -0.3;
-  ship.add(leftWing);
-
-  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.6, 0.6), accentMat);
-  fin.position.set(0, 0.4, -0.8);
-  ship.add(fin);
-
-  // Engine glow at the rear
-  const engine = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22, 0.3, 0.2, 6),
-    new THREE.MeshBasicMaterial({ color: 0x66ccff })
-  );
-  engine.rotation.x = Math.PI / 2;
-  engine.position.z = -1.25;
-  ship.add(engine);
-  const engineLight = new THREE.PointLight(0x66ccff, 3, 4);
-  engineLight.position.z = -1.6;
-  ship.add(engineLight);
-
-  return ship;
-}
 const ship = createShip();
 ship.position.set(2.5, 1.2, 15);
 ship.lookAt(planet.position);
 scene.add(ship);
 
-camera.lookAt(new THREE.Vector3(0, 0, 6));
+// Procedural banded surface so each system's planet looks distinct
+function makePlanetTexture(spec) {
+  const w = 256;
+  const h = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const s = spec.bandSeed;
+  const base = spec.color.clone();
+  const hsl = base.getHSL({});
+  const c = new THREE.Color();
+  for (let y = 0; y < h; y++) {
+    const v = y / h;
+    const band = Math.sin(v * 22 + s) * 0.5 + Math.sin(v * 51 + s * 1.7) * 0.3 + Math.sin(v * 7 + s * 0.3) * 0.6;
+    c.setHSL((hsl.h + band * 0.02 + 1) % 1, hsl.s, THREE.MathUtils.clamp(hsl.l + band * 0.08, 0.05, 0.9));
+    ctx.fillStyle = `#${c.getHexString()}`;
+    ctx.fillRect(0, y, w, 1);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function applyPlanet(spec) {
+  planetBody.material.map?.dispose();
+  planetBody.material.map = makePlanetTexture(spec);
+  planetBody.material.color.set(0xffffff);
+  planetBody.material.needsUpdate = true;
+  atmosphere.material.uniforms.glowColor.value.copy(spec.glow);
+  ring.visible = spec.hasRing;
+  ring.material.uniforms.ringColor.value.copy(spec.ringColor);
+  ring.rotation.x = -Math.PI / 2 + spec.ringTilt;
+  planet.scale.setScalar(spec.size);
+}
+
+// Game state + HUD
+const state = { hull: 100, fuel: 10, scrap: 0 };
+const hud = {
+  hull: document.getElementById('hud-hull'),
+  fuel: document.getElementById('hud-fuel'),
+  scrap: document.getElementById('hud-scrap'),
+  system: document.getElementById('hud-system'),
+  hint: document.getElementById('hint'),
+  toast: document.getElementById('toast'),
+};
+function renderHud() {
+  hud.hull.textContent = state.hull;
+  hud.fuel.textContent = state.fuel;
+  hud.scrap.textContent = state.scrap;
+  hud.system.textContent = galaxyMap.current.name;
+}
+let toastTimer;
+function toast(message) {
+  hud.toast.textContent = message;
+  hud.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => hud.toast.classList.remove('show'), 2200);
+}
+
+// Galaxy map lives far below the planet scene; the camera flies between the two
+const MAP_CENTER = new THREE.Vector3(0, -160, 0);
+const galaxyMap = new GalaxyMap(generateGalaxy(), MAP_CENTER, document.getElementById('map-labels'));
+scene.add(galaxyMap.group);
+applyPlanet(galaxyMap.current.planet);
+renderHud();
+
+const views = {
+  main: { position: new THREE.Vector3(11, 4, 21), target: new THREE.Vector3(0, 0, 6) },
+  map: {
+    position: MAP_CENTER.clone().add(new THREE.Vector3(0, 78, 26)),
+    target: MAP_CENTER.clone(),
+  },
+};
+let view = 'main';
+let cameraTween = null;
+const cameraTarget = views.main.target.clone();
+camera.position.copy(views.main.position);
+camera.lookAt(cameraTarget);
+
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+function setView(next) {
+  if (next === view && !cameraTween) return;
+  view = next;
+  cameraTween = {
+    fromPos: camera.position.clone(),
+    fromTarget: cameraTarget.clone(),
+    to: views[next],
+    elapsed: 0,
+    duration: 1.4,
+  };
+  document.body.classList.toggle('map-open', next === 'map');
+  hud.hint.textContent =
+    next === 'map' ? 'Click a linked system to jump (−1 fuel) · M to close map' : 'M — Galaxy map';
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || e.key.toLowerCase() !== 'm') return;
+  if (galaxyMap.travel) return; // finish the jump first
+  setView(view === 'map' ? 'main' : 'map');
+});
+
+// Node picking
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+function pickNode(event) {
+  pointer.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(galaxyMap.hitTargets, false)[0];
+  return hit ? hit.object.userData.nodeId : null;
+}
+const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel;
+
+canvas.addEventListener('pointermove', (e) => {
+  const id = mapInteractive() ? pickNode(e) : null;
+  canvas.style.cursor = id !== null && galaxyMap.isReachable(id) ? 'pointer' : '';
+});
+
+canvas.addEventListener('click', async (e) => {
+  if (!mapInteractive()) return;
+  const id = pickNode(e);
+  if (id === null || id === galaxyMap.currentId) return;
+  if (!galaxyMap.isReachable(id)) {
+    toast('No hyperlane to that system');
+    return;
+  }
+  if (state.fuel <= 0) {
+    toast('Out of fuel');
+    return;
+  }
+  state.fuel -= 1;
+  renderHud();
+  canvas.style.cursor = '';
+  const node = await galaxyMap.travelTo(id);
+  applyPlanet(node.planet);
+  renderHud();
+  toast(`Arrived at ${node.name}`);
+});
 
 // Resize
 window.addEventListener('resize', () => {
@@ -201,10 +288,24 @@ window.addEventListener('resize', () => {
 const clock = new THREE.Clock();
 const shipBase = ship.position.clone();
 renderer.setAnimationLoop(() => {
-  const t = clock.getElapsedTime();
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const t = clock.elapsedTime;
   planetBody.rotation.y = t * 0.05;
   ring.material.uniforms.time.value = t;
   stars.rotation.y = t * 0.003;
   ship.position.y = shipBase.y + Math.sin(t * 1.2) * 0.08; // gentle idle bob
+
+  if (cameraTween) {
+    const tw = cameraTween;
+    tw.elapsed += dt;
+    const k = easeInOutCubic(Math.min(tw.elapsed / tw.duration, 1));
+    camera.position.lerpVectors(tw.fromPos, tw.to.position, k);
+    cameraTarget.lerpVectors(tw.fromTarget, tw.to.target, k);
+    camera.lookAt(cameraTarget);
+    if (tw.elapsed >= tw.duration) cameraTween = null;
+  }
+
+  galaxyMap.update(dt, t);
+  galaxyMap.updateLabels(camera, window.innerWidth, window.innerHeight, view === 'map' && !cameraTween);
   renderer.render(scene, camera);
 });

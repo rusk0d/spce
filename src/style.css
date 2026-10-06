@@ -50,3 +50,84 @@ html, body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+.system .value {
+  font-size: 16px;
+  line-height: 27px;
+  white-space: nowrap;
+}
+
+#hint {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(8, 16, 28, 0.55);
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  color: #9fd4f2;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#toast {
+  position: fixed;
+  top: 96px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  padding: 8px 18px;
+  border-radius: 6px;
+  background: rgba(8, 16, 28, 0.8);
+  border: 1px solid rgba(120, 200, 255, 0.4);
+  color: #dff4ff;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+#map-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.map-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(200, 225, 240, 0.45);
+  white-space: nowrap;
+}
+
+.map-label.reachable {
+  color: #9fe8ff;
+}
+
+.map-label.current {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.map-label.current::after {
+  content: ' (here)';
+  font-weight: 400;
+  color: #7fbfe6;
+}
+
+@media (max-width: 560px) {
+  #hud { flex-wrap: wrap; right: 16px; }
+  .stat { min-width: 0; flex: 1 1 70px; }
+}
