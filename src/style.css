@@ -131,3 +131,150 @@ html, body {
   #hud { flex-wrap: wrap; right: 16px; }
   .stat { min-width: 0; flex: 1 1 70px; }
 }
+
+.stat.hit {
+  animation: hull-hit 0.6s ease-out;
+}
+
+@keyframes hull-hit {
+  0% { border-color: #ff4455; background: rgba(120, 10, 20, 0.7); }
+  100% { border-color: rgba(120, 200, 255, 0.35); background: rgba(8, 16, 28, 0.55); }
+}
+
+#combat {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  width: min(360px, calc(100% - 32px));
+  padding: 14px 16px 16px;
+  border: 1px solid rgba(255, 90, 100, 0.45);
+  border-radius: 8px;
+  background: rgba(20, 8, 12, 0.75);
+  backdrop-filter: blur(4px);
+  color: #ffe3e6;
+  transform: translate(-50%, 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+#combat.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+#combat .label {
+  color: #ff9aa4;
+}
+
+.enemy-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.enemy-hp-text {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hp-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff3344, #ff7a5c);
+  transition: width 0.35s ease-out;
+}
+
+.combat-log {
+  min-height: 20px;
+  margin: 10px 0 12px;
+  font-size: 14px;
+  color: #f3d3d6;
+}
+
+#combat button,
+#gameover button {
+  width: 100%;
+  padding: 10px 0;
+  border: 1px solid #ff5566;
+  border-radius: 6px;
+  background: #b3202f;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+#combat button:hover:not(:disabled),
+#gameover button:hover {
+  background: #d22c3c;
+}
+
+#combat button:focus-visible,
+#gameover button:focus-visible {
+  outline: 2px solid #9fe8ff;
+  outline-offset: 2px;
+}
+
+#combat button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#gameover {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s;
+}
+
+#gameover.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gameover-card {
+  width: min(380px, 100%);
+  padding: 28px 24px 24px;
+  border: 1px solid rgba(255, 90, 100, 0.5);
+  border-radius: 10px;
+  background: rgba(20, 8, 12, 0.9);
+  color: #ffe3e6;
+  text-align: center;
+}
+
+.gameover-card h1 {
+  font-size: 32px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #ff5566;
+  margin-bottom: 10px;
+}
+
+.gameover-card p {
+  margin-bottom: 8px;
+}
+
+.gameover-stats {
+  font-size: 13px;
+  color: #c9a5aa;
+  margin-bottom: 20px !important;
+}

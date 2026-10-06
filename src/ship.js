@@ -53,3 +53,52 @@ export function createShip() {
 
   return ship;
 }
+
+// Low-poly pirate raider: dark angular hull, forked prongs, green running lights.
+// Nose along +Z, like the player ship.
+export function createPirateShip() {
+  const ship = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x3a3f47, flatShading: true, metalness: 0.2, roughness: 0.7 });
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0x6b5a3a, flatShading: true, metalness: 0.2, roughness: 0.8 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: 0x55ff88, emissive: 0x33ff66, emissiveIntensity: 1.2, flatShading: true });
+
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), hullMat);
+  core.scale.set(1.1, 0.55, 1.4);
+  ship.add(core);
+
+  // Twin forward prongs
+  for (const side of [-1, 1]) {
+    const prong = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.8, 4), plateMat);
+    prong.rotation.x = Math.PI / 2;
+    prong.position.set(side * 0.55, 0, 1.3);
+    ship.add(prong);
+
+    // Jagged swept-back wing
+    const wing = new THREE.Mesh(new THREE.TetrahedronGeometry(0.9, 0), hullMat);
+    wing.scale.set(1.6, 0.25, 1);
+    wing.position.set(side * 1.3, 0, -0.4);
+    wing.rotation.y = side * 0.6;
+    ship.add(wing);
+
+    const light = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), glowMat);
+    light.position.set(side * 2.2, 0, -0.7);
+    ship.add(light);
+  }
+
+  const bridge = new THREE.Mesh(new THREE.TetrahedronGeometry(0.4, 0), glowMat);
+  bridge.position.set(0, 0.45, 0.1);
+  ship.add(bridge);
+
+  const engine = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.4, 0.3, 5),
+    new THREE.MeshBasicMaterial({ color: 0x66ff99 })
+  );
+  engine.rotation.x = Math.PI / 2;
+  engine.position.z = -1.25;
+  ship.add(engine);
+  const engineLight = new THREE.PointLight(0x55ff88, 3, 5);
+  engineLight.position.z = -1.7;
+  ship.add(engineLight);
+
+  return ship;
+}

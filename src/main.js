@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createShip } from './ship.js';
 import { generateGalaxy, GalaxyMap } from './galaxy.js';
+import { Combat } from './combat.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -174,7 +175,8 @@ function applyPlanet(spec) {
 }
 
 // Game state + HUD
-const state = { hull: 100, fuel: 10, scrap: 0 };
+const state = { hull: 100, fuel: 10, scrap: 0, jumps: 0, piratesDefeated: 0, gameOver: false };
+const PIRATE_CHANCE = 0.4;
 const hud = {
   hull: document.getElementById('hud-hull'),
   fuel: document.getElementById('hud-fuel'),
@@ -210,6 +212,8 @@ const views = {
     position: MAP_CENTER.clone().add(new THREE.Vector3(0, 78, 26)),
     target: MAP_CENTER.clone(),
   },
+  // Pulled back and to the side so the player ship and the pirate face off across the frame
+  combat: { position: new THREE.Vector3(9, 6, 29), target: new THREE.Vector3(7.5, 1.5, 13) },
 };
 let view = 'main';
 let cameraTween = null;
@@ -230,13 +234,66 @@ function setView(next) {
     duration: 1.4,
   };
   document.body.classList.toggle('map-open', next === 'map');
-  hud.hint.textContent =
-    next === 'map' ? 'Click a linked system to jump (−1 fuel) · M to close map' : 'M — Galaxy map';
+  const hints = {
+    main: 'M — Galaxy map',
+    map: 'Click a linked system to jump (−1 fuel) · M to close map',
+    combat: '',
+  };
+  hud.hint.textContent = hints[next];
+  hud.hint.hidden = !hints[next];
 }
+
+// Pirate encounters
+const combat = new Combat({
+  scene,
+  playerShip: ship,
+  enemyPosition: new THREE.Vector3(13, 2, 11),
+  state,
+  ui: {
+    panel: document.getElementById('combat'),
+    attack: document.getElementById('attack-btn'),
+    enemyHpFill: document.getElementById('enemy-hp-fill'),
+    enemyHpText: document.getElementById('enemy-hp-text'),
+    log: document.getElementById('combat-log'),
+  },
+  onHullChange: () => {
+    renderHud();
+    const stat = hud.hull.closest('.stat');
+    stat.classList.remove('hit');
+    void stat.offsetWidth; // restart the flash animation
+    stat.classList.add('hit');
+  },
+  onEnd: ({ result, scrap }) => {
+    if (result === 'win') {
+      state.scrap += scrap;
+      state.piratesDefeated += 1;
+      renderHud();
+      toast(`Victory! +${scrap} scrap`);
+      setView('main');
+    } else {
+      showGameOver();
+    }
+  },
+});
+
+async function startPirateFight() {
+  setView('combat');
+  await new Promise((resolve) => setTimeout(resolve, 1500)); // let the camera settle
+  combat.start();
+}
+
+function showGameOver() {
+  state.gameOver = true;
+  document.getElementById('gameover-stats').textContent =
+    `Jumps made: ${state.jumps} · Pirates defeated: ${state.piratesDefeated} · Scrap: ${state.scrap}`;
+  document.getElementById('gameover').classList.add('show');
+  document.getElementById('restart-btn').focus();
+}
+document.getElementById('restart-btn').addEventListener('click', () => window.location.reload());
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat || e.key.toLowerCase() !== 'm') return;
-  if (galaxyMap.travel) return; // finish the jump first
+  if (galaxyMap.travel || combat.active || state.gameOver) return; // finish the jump/fight first
   setView(view === 'map' ? 'main' : 'map');
 });
 
@@ -272,9 +329,15 @@ canvas.addEventListener('click', async (e) => {
   renderHud();
   canvas.style.cursor = '';
   const node = await galaxyMap.travelTo(id);
+  state.jumps += 1;
   applyPlanet(node.planet);
   renderHud();
-  toast(`Arrived at ${node.name}`);
+  if (Math.random() < PIRATE_CHANCE) {
+    toast(`Arrived at ${node.name} — pirates detected!`);
+    startPirateFight();
+  } else {
+    toast(`Arrived at ${node.name}`);
+  }
 });
 
 // Resize
@@ -306,6 +369,7 @@ renderer.setAnimationLoop(() => {
   }
 
   galaxyMap.update(dt, t);
+  combat.update(dt, t);
   galaxyMap.updateLabels(camera, window.innerWidth, window.innerHeight, view === 'map' && !cameraTween);
   renderer.render(scene, camera);
 });

@@ -28,6 +28,25 @@
   <div id="hint">M — Galaxy map</div>
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <div id="combat" aria-live="polite">
+    <div class="enemy-row">
+      <span class="label">Pirate Raider</span>
+      <span class="enemy-hp-text" id="enemy-hp-text"></span>
+    </div>
+    <div class="hp-bar"><div class="hp-fill" id="enemy-hp-fill"></div></div>
+    <div class="combat-log" id="combat-log"></div>
+    <button id="attack-btn" type="button">Attack</button>
+  </div>
+
+  <div id="gameover" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
+    <div class="gameover-card">
+      <h1 id="gameover-title">Game Over</h1>
+      <p>Your ship was destroyed by pirates.</p>
+      <p class="gameover-stats" id="gameover-stats"></p>
+      <button id="restart-btn" type="button">Restart</button>
+    </div>
+  </div>
+
   <script type="module" src="src/main.js"></script>
 </body>
 </html>
