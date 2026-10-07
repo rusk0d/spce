@@ -15,11 +15,17 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
   - Hyperlanes only join nearby nodes in the *next* column and never cross, so
     there's no backtracking, every node is reachable, and every route leads to
     the gate (no dead ends).
-  - Click/tap a linked system ahead of you to jump there (−1 Fuel). Reaching
-    the Hyperdrive Gate offers the jump to the next sector, which generates a
-    fresh map; the HUD shows the current sector.
+  - Click/tap a linked system ahead of you to jump there (−1 Fuel).
+- Hyperdrive jump: reaching the Hyperdrive Gate unlocks a glowing **Charge
+  Hyperdrive** button. Charging returns the camera to the ship and plays a 3D
+  warp tunnel (light streaks + field-of-view kick + flash); at the flash the
+  old map is cleared and a brand-new sector is generated. The **Sector** tile
+  in the HUD counts up, and each sector is a little harder
+  (`src/difficulty.js`): pirates gain +15% HP and +12% damage, +3% accuracy and
+  +5% ambush chance per sector, crew-event mishaps get likelier, and scrap
+  rewards rise +10% (all capped).
 - Pirate encounters: each jump to a non-station system has a 40% chance of a
-  pirate ambush (60 HP). The fight is turn-based — fire the **Laser** or
+  pirate ambush (60 HP in sector 1; both rise in later sectors). The fight is turn-based — fire the **Laser** or
   **Missile** (see weapons below); the pirate answers with a green laser (8–16
   damage, soaked by shields first). Destroying it salvages 15–30 Scrap; if your
   Hull reaches 0 it's Game Over, and **Restart** starts a fresh run.
@@ -83,6 +89,8 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
 - `src/events.js` — star-node crew events
 - `src/shop.js` — Sector Shop catalogue and panel
 - `src/power.js` — reactor power grid model and power allocation panel
+- `src/warp.js` — hyperdrive warp-tunnel effect
+- `src/difficulty.js` — per-sector difficulty curve
 - `src/combat.js` — pirate encounter: turn logic, laser & missile weapons, effects
 - `src/ship.js` — low-poly player ship, pirate raider and space station meshes
 - `src/textures.js` — shared glow sprite texture

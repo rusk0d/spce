@@ -3,7 +3,8 @@
  * run(ctx) applies its effects and returns the outcome text to show.
  * `available(ctx)` (optional) greys a choice out with a reason.
  *
- * ctx = { crew, state }
+ * ctx = { crew, state, hazard } — hazard (0 in sector 1, rising each sector)
+ * makes mishaps more likely.
  */
 const chance = (p) => Math.random() < p;
 
@@ -31,8 +32,8 @@ export const CREW_EVENTS = [
     choices: [
       {
         label: 'Seal the leak',
-        run: ({ crew }) => {
-          if (crew.has('Engineer') && chance(0.6)) {
+        run: ({ crew, hazard }) => {
+          if (crew.has('Engineer') && chance(0.6 - hazard)) {
             return 'Your engineer clamps the line before anyone is hurt.';
           }
           return `The leak is sealed, but not cleanly. ${crew.injureRandom()}`;
@@ -47,8 +48,8 @@ export const CREW_EVENTS = [
     choices: [
       {
         label: 'Fight them off',
-        run: ({ crew }) => {
-          const roll = Math.random();
+        run: ({ crew, hazard }) => {
+          const roll = Math.random() + hazard;
           if (roll < 0.35) return 'Your crew drives the scavengers back without a scratch.';
           const victim = crew.random();
           if (!victim) return 'The scavengers find nothing worth taking.';
@@ -107,9 +108,9 @@ export const CREW_EVENTS = [
     choices: [
       {
         label: 'Quarantine the sick',
-        run: ({ crew }) => {
+        run: ({ crew, hazard }) => {
           const injured = crew.random((m) => m.status === 'injured');
-          if (injured && chance(0.4)) return crew.kill(injured, 'succumbs to the fever');
+          if (injured && chance(0.4 + hazard)) return crew.kill(injured, 'succumbs to the fever');
           const healthy = crew.random((m) => m.status === 'healthy');
           return healthy ? crew.injure(healthy) : 'The fever passes without further harm.';
         },

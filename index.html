@@ -19,6 +19,7 @@
   <canvas id="scene"></canvas>
 
   <div id="hud">
+    <div class="stat sector"><span class="label">Sector</span><span class="value" id="hud-sector">1</span></div>
     <div class="stat"><span class="label">Hull</span><span class="value" id="hud-hull">100</span></div>
     <div class="stat shields"><span class="label">Shields</span><span class="value"><span id="hud-shields">40</span><span class="value-max" id="hud-shields-max">/40</span></span></div>
     <div class="stat"><span class="label">Fuel</span><span class="value" id="hud-fuel">10</span></div>
@@ -38,6 +39,10 @@
   <div id="map-labels"></div>
   <div id="controls">
     <p id="help"></p>
+    <button id="charge-btn" class="charge-btn" type="button">
+      <span class="charge-fill" aria-hidden="true"></span>
+      <span class="charge-label">Charge Hyperdrive</span>
+    </button>
     <div class="control-row">
       <button id="power-btn" type="button" aria-controls="power" aria-expanded="false">Power</button>
       <button id="crew-btn" type="button" aria-controls="crew" aria-expanded="false">Crew <span class="crew-btn-count" id="crew-btn-count"></span></button>
@@ -45,6 +50,7 @@
       <button id="map-btn" type="button"><span id="map-btn-text">Galaxy Map</span><kbd>M</kbd></button>
     </div>
   </div>
+  <div id="warp-flash" aria-hidden="true"></div>
   <div id="toast" role="status" aria-live="polite"></div>
 
   <div id="combat" aria-live="polite">

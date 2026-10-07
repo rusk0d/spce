@@ -6,6 +6,8 @@ import { onPress, SwipeTracker } from './input.js';
 import { Crew, CrewPanel } from './crew.js';
 import { pickCrewEvent } from './events.js';
 import { Shop } from './shop.js';
+import { sectorDifficulty } from './difficulty.js';
+import { WarpEffect } from './warp.js';
 import {
   PowerGrid,
   PowerPanel,
@@ -152,6 +154,10 @@ ship.position.set(2.5, 1.2, 15);
 ship.lookAt(planet.position);
 scene.add(ship);
 
+// The camera joins the scene so camera-space effects (the warp tunnel) render
+scene.add(camera);
+const warp = new WarpEffect(camera);
+
 // Procedural banded surface so each system's planet looks distinct
 function makePlanetTexture(spec) {
   const w = 256;
@@ -200,11 +206,11 @@ const state = {
   missiles: 4,
   jumps: 0,
   sector: 1,
+  warping: false,
   piratesDefeated: 0,
   gameOver: false,
   eventOpen: false,
 };
-const PIRATE_CHANCE = 0.4;
 const CREW_EVENT_CHANCE = 0.55; // per arrival without pirates
 const CREW_INJURY_ON_HULL_HIT = 0.25;
 const RECOVERY_PER_JUMP = 0.25; // chance an injured crew member recovers each jump
@@ -215,7 +221,7 @@ const hud = {
   fuel: document.getElementById('hud-fuel'),
   scrap: document.getElementById('hud-scrap'),
   system: document.getElementById('hud-system'),
-  systemLabel: document.querySelector('.stat.system .label'),
+  sector: document.getElementById('hud-sector'),
   toast: document.getElementById('toast'),
 };
 function renderHud() {
@@ -225,9 +231,10 @@ function renderHud() {
   hud.fuel.textContent = state.fuel;
   hud.scrap.textContent = state.scrap;
   hud.system.textContent = galaxyMap.current.name;
-  hud.systemLabel.textContent = `Sector ${state.sector}`;
+  hud.sector.textContent = state.sector;
 }
 const chance = (p) => Math.random() < p;
+const difficulty = () => sectorDifficulty(state.sector);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function flashStat(valueEl) {
@@ -393,6 +400,12 @@ const helpText = {
   combat: '',
 };
 
+const GATE_HELP = 'Hyperdrive Gate reached — charge the hyperdrive to leave the sector';
+function helpFor(name) {
+  const atGate = galaxyMap?.current.type === NODE_TYPES.GATE;
+  return atGate && name !== 'combat' ? GATE_HELP : helpText[name];
+}
+
 function setView(next) {
   if (next === view && !cameraTween) return;
   view = next;
@@ -407,13 +420,13 @@ function setView(next) {
   document.body.classList.toggle('map-open', next === 'map');
   document.body.classList.toggle('in-combat', next === 'combat');
   if (next === 'combat') document.body.classList.remove('crew-open', 'power-open');
-  controls.help.textContent = helpText[next];
+  controls.help.textContent = helpFor(next);
   controls.mapBtnText.textContent = next === 'map' ? 'Close Map' : 'Galaxy Map';
 }
 controls.help.textContent = helpText.main;
 
 const canToggleMap = () =>
-  !galaxyMap.travel && !combat.active && !state.gameOver && !modalOpen() && view !== 'combat';
+  !galaxyMap.travel && !state.warping && !combat.active && !state.gameOver && !modalOpen() && view !== 'combat';
 function toggleMap() {
   if (!canToggleMap()) return;
   setView(view === 'map' ? 'main' : 'map');
@@ -472,6 +485,7 @@ const combat = new Combat({
     log: document.getElementById('combat-log'),
   },
   weaponPower: () => power.level('weapons'),
+  difficulty,
   ammo: {
     count: () => state.missiles,
     use: () => {
@@ -547,7 +561,8 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Canvas pointer input: tap-to-jump on the galaxy map, swipe-to-orbit in the main view
-const mapInteractive = () => view === 'map' && !cameraTween && !galaxyMap.travel && !modalOpen();
+const mapInteractive = () =>
+  view === 'map' && !cameraTween && !galaxyMap.travel && !modalOpen() && !state.warping;
 const tapRadius = (e) => (e.pointerType === 'mouse' ? 24 : 44);
 
 async function jumpTo(id) {
@@ -574,7 +589,7 @@ async function jumpTo(id) {
   updateStation();
   if (node.type === NODE_TYPES.GATE) {
     toast([`Arrived at the ${node.name}`, ...notes].join(' · '));
-    await runEvent(gateEvent());
+    updateGate();
     return;
   }
   if (node.station) {
@@ -585,7 +600,7 @@ async function jumpTo(id) {
     shop.open(node.name);
     return;
   }
-  if (Math.random() < PIRATE_CHANCE) {
+  if (Math.random() < difficulty().pirateChance) {
     toast(`Arrived at ${node.name} — pirates detected!`);
     startPirateFight();
     return;
@@ -598,24 +613,61 @@ async function jumpTo(id) {
   }
 }
 
-/** The exit gate: the only way onward from the rightmost node of a sector. */
-function gateEvent() {
-  return {
-    title: 'Hyperdrive Gate',
-    text: `The gate's ring spins up, charged and waiting. Beyond it lies Sector ${state.sector + 1}.`,
-    choices: [
-      {
-        label: `Jump to Sector ${state.sector + 1}`,
-        run: () => {
-          state.sector += 1;
-          enterSector();
-          updateStation();
-          renderHud();
-          return `Hyperspace folds around the ship. Welcome to Sector ${state.sector}, arriving at ${galaxyMap.current.name}.`;
-        },
-      },
-    ],
-  };
+// Hyperdrive: at the gate, a Charge Hyperdrive button unlocks. Charging plays
+// the warp tunnel; at its flash the old sector map is cleared and a new one
+// generated, the Sector counter advances and difficulty steps up.
+const chargeBtn = document.getElementById('charge-btn');
+const warpFlash = document.getElementById('warp-flash');
+
+function updateGate() {
+  const atGate = galaxyMap.current.type === NODE_TYPES.GATE;
+  document.body.classList.toggle('at-gate', atGate);
+  if (view !== 'combat') controls.help.textContent = helpFor(view);
+}
+
+async function chargeHyperdrive() {
+  const ready =
+    galaxyMap.current.type === NODE_TYPES.GATE &&
+    !state.warping && !state.gameOver && !modalOpen() && !combat.active && !galaxyMap.travel;
+  if (!ready) return;
+  state.warping = true;
+  chargeBtn.classList.add('charging');
+  chargeBtn.disabled = true;
+  await wait(900); // the button's charge bar fills
+  document.body.classList.add('warping');
+  document.body.classList.remove('crew-open', 'power-open');
+  if (view !== 'main') {
+    setView('main');
+    await wait(1500); // fly back to the ship before the jump
+  }
+  await warp.play({
+    onPeak: () => {
+      warpFlash.classList.remove('flash');
+      void warpFlash.offsetWidth; // restart the flash animation
+      warpFlash.classList.add('flash');
+      enterNextSector();
+    },
+  });
+  state.warping = false;
+  chargeBtn.classList.remove('charging');
+  chargeBtn.disabled = false;
+  document.body.classList.remove('warping');
+  const level = difficulty();
+  toast(`Sector ${state.sector} · ${galaxyMap.current.name} — pirates here are tougher (${level.enemyHp} HP)`);
+}
+onPress(chargeBtn, chargeHyperdrive);
+
+function enterNextSector() {
+  state.sector += 1;
+  enterSector(); // clears the old map (scene group + labels) and generates a new sector
+  orbit.yaw = orbit.targetYaw = 0;
+  updateStation();
+  updateGate();
+  renderHud();
+  const tile = hud.sector.closest('.stat');
+  tile.classList.remove('advanced');
+  void tile.offsetWidth;
+  tile.classList.add('advanced');
 }
 
 /** Passive effects on every jump: shield regen, engineer repairs, crew recovery. */
@@ -661,7 +713,7 @@ function eventButton(label, onChoose, disabledReason = null) {
 /** Shows an event, lets the player choose, then shows the outcome. */
 function runEvent(event) {
   state.eventOpen = true;
-  const ctx = { crew, state };
+  const ctx = { crew, state, hazard: difficulty().hazard };
   eventUi.title.textContent = event.title;
   eventUi.text.textContent = event.text;
   eventUi.root.classList.add('show');
@@ -758,6 +810,7 @@ renderer.setAnimationLoop((now) => {
   }
 
   galaxyMap.update(dt, t);
+  warp.update(dt);
   if (station.visible) station.userData.update(t);
   combat.update(dt, t);
   const showLabels = view === 'map' && !cameraTween;

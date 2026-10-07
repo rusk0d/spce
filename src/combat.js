@@ -9,7 +9,6 @@ const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 const PLAYER_LASER = 0xff3344;
 const ENEMY_LASER = 0x44ff66;
 const MISSILE_COLOR = 0xffaa33;
-const ENEMY_MAX_HP = 60;
 const HIT_CHANCE = 0.85;
 
 /**
@@ -287,8 +286,9 @@ export class Combat {
   /**
    * @param weaponPower () => current Weapons power level.
    * @param ammo { count: () => number, use: () => void } missile ammo.
+   * @param difficulty () => sectorDifficulty() for the current sector.
    */
-  constructor({ scene, playerShip, enemyPosition, ui, onPlayerHit, enemyHitChance, onTurnEnd, onEnd, weaponPower, ammo }) {
+  constructor({ scene, playerShip, enemyPosition, ui, onPlayerHit, enemyHitChance, onTurnEnd, onEnd, weaponPower, ammo, difficulty }) {
     this.scene = scene;
     this.playerShip = playerShip;
     this.enemyPosition = enemyPosition;
@@ -299,6 +299,7 @@ export class Combat {
     this.onEnd = onEnd;
     this.weaponPower = weaponPower;
     this.ammo = ammo;
+    this.difficulty = difficulty;
     this.missileReload = 0; // turns until the launcher can fire again
     this.effects = new Effects(scene);
     this.active = false;
@@ -313,7 +314,9 @@ export class Combat {
   async start() {
     this.active = true;
     this.busy = true;
-    this.enemyHp = ENEMY_MAX_HP;
+    this.level = this.difficulty();
+    this.enemyMaxHp = this.level.enemyHp;
+    this.enemyHp = this.enemyMaxHp;
 
     const enemy = createPirateShip();
     enemy.position.copy(this.enemyPosition);
@@ -450,7 +453,7 @@ export class Combat {
       this.effects.explosion(this.enemy.position, 0x88ffaa);
       this.scene.remove(this.enemy);
       this.enemy = null;
-      const scrap = randInt(15, 30);
+      const scrap = Math.round(randInt(15, 30) * this.level.scrapMultiplier);
       this.log(`Pirate destroyed! Salvaged ${scrap} scrap.`);
       await wait(1400);
       this.finish({ result: 'win', scrap });
@@ -459,10 +462,10 @@ export class Combat {
 
     // Enemy turn
     await wait(650);
-    const enemyHit = await this.fire(this.enemy, this.playerShip, ENEMY_LASER, this.enemyHitChance());
+    const enemyHit = await this.fire(this.enemy, this.playerShip, ENEMY_LASER, Math.min(this.enemyHitChance() + this.level.enemyAccuracy, 0.95));
     let outcome = null;
     if (enemyHit) {
-      const hit = this.onPlayerHit(randInt(8, 16));
+      const hit = this.onPlayerHit(randInt(...this.level.enemyDamage));
       outcome = hit.outcome;
       this.log(hit.message);
     } else {
@@ -501,9 +504,9 @@ export class Combat {
   }
 
   renderEnemyHp() {
-    const pct = (this.enemyHp / ENEMY_MAX_HP) * 100;
+    const pct = (this.enemyHp / this.enemyMaxHp) * 100;
     this.ui.enemyHpFill.style.width = `${pct}%`;
-    this.ui.enemyHpText.textContent = `${this.enemyHp} / ${ENEMY_MAX_HP}`;
+    this.ui.enemyHpText.textContent = `${this.enemyHp} / ${this.enemyMaxHp}`;
   }
 
   log(message) {
