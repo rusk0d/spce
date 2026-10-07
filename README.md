@@ -6,10 +6,18 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
 - Planet with a fresnel atmosphere and a glowing ring
 - Low-poly spaceship facing the planet
 - HTML HUD overlay: Hull, Fuel, Scrap, current system
-- Galaxy map (press **M** or the **Galaxy Map** button): a procedurally generated graph of 5–8 connected star
-  systems. Click a system linked to your current one to jump there — the ship
-  flies the hyperlane, 1 Fuel is spent, and the planet in the main view changes
-  to that system's planet. Press **M** again to return.
+- Galaxy map (press **M** or the **Galaxy Map** button): each **sector** is an
+  FTL-style route that runs left to right, from your start on the far left to
+  the **Hyperdrive Gate** on the far right.
+  - 5–6 columns of 1–3 nodes each; 2–7 nodes are **planets** (the start is
+    always one) and the rest are open-space **anomalies** (ion storms, nebulae,
+    asteroid belts… — no planet in the ship view).
+  - Hyperlanes only join nearby nodes in the *next* column and never cross, so
+    there's no backtracking, every node is reachable, and every route leads to
+    the gate (no dead ends).
+  - Click/tap a linked system ahead of you to jump there (−1 Fuel). Reaching
+    the Hyperdrive Gate offers the jump to the next sector, which generates a
+    fresh map; the HUD shows the current sector.
 - Pirate encounters: each jump has a 40% chance of a pirate ambush. The fight is
   turn-based — press **Attack** to fire a red laser at the raider (85% hit
   chance, 14–24 damage against 60 HP); it answers with a green laser (8–16
@@ -43,8 +51,8 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
   - Shields: passive regen of 3 per combat turn and 6 per jump, per bar
     (0 bars = no regen), still boosted +10% per Shields crew member.
   - Engines: +6% evasion per bar; with 0 bars the ship can't jump.
-- Space stations: 1–2 systems per galaxy (one always within two jumps of the
-  start) are friendly stations, marked on the map with a gold diamond and a
+- Space stations: 1–2 planets per sector (one in the first couple of columns)
+  are friendly stations, marked on the map with a gold diamond and a
   STATION tag. Docking is safe (no pirates or crew events) and opens the
   **Sector Shop**; reopen it with the **Shop** button while docked:
   - Fuel Cell — 3 scrap for +1 Fuel
@@ -69,7 +77,8 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
 ## Layout
 
 - `src/main.js` — scene, planet, game state, camera transitions, input
-- `src/galaxy.js` — galaxy graph generation and the 3D map view
+- `src/galaxy.js` — sector route generation (columns, forward hyperlanes,
+  planets/anomalies/gate, stations) and the 3D map view
 - `src/crew.js` — crew model, role bonuses and the crew panel
 - `src/events.js` — star-node crew events
 - `src/shop.js` — Sector Shop catalogue and panel

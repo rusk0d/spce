@@ -7,6 +7,26 @@ const SYSTEM_NAMES = [
   'Cygnus Rest', 'Lyra Verge', 'Draco Spur', 'Zeta Cross', 'Antares Fold', 'Mira Expanse',
 ];
 
+const ANOMALY_NAMES = [
+  'Ion Storm', 'Asteroid Belt', 'Dust Nebula', 'Gravity Well', 'Derelict Field',
+  'Plasma Rift', 'Dark Expanse', 'Comet Trail', 'Pulsar Wake', 'Radiation Belt',
+];
+
+export const NODE_TYPES = { PLANET: 'planet', ANOMALY: 'anomaly', GATE: 'gate' };
+
+// Sector layout tuning (map units; the renderer frames roughly x/z ∈ [-34, 34])
+const SECTOR = {
+  columns: [5, 6], // inclusive range of columns, start and gate included
+  perColumn: [1, 3], // inclusive range of nodes in each middle column
+  planets: [2, 7], // inclusive range of planet nodes in the sector (start included)
+  xSpan: 32, // columns run from x = -xSpan to +xSpan, left to right
+  zSpan: 22, // nodes in a column spread over z ∈ [-zSpan, zSpan]
+  jitter: 2.5,
+};
+
+const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
 function shuffle(list) {
   const a = [...list];
   for (let i = a.length - 1; i > 0; i--) {
@@ -31,92 +51,182 @@ function randomPlanet() {
 }
 
 /**
- * Builds a connected graph of 5–8 star systems laid out on the XZ plane.
- * A minimum spanning tree guarantees every node is reachable, then a few
- * short extra links add route choices.
+ * Anomalies are open space: violet-tinted on the map, and a near-zero `size`
+ * so the main view shows no planet there (the existing renderer scales the
+ * planet group by `size`).
  */
-export function generateGalaxy() {
-  const count = 5 + Math.floor(Math.random() * 4);
-  const radius = 34;
-  const minDist = 13;
-  const positions = [];
-  for (let attempts = 0; positions.length < count && attempts < 5000; attempts++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(Math.random()) * radius;
-    const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
-    if (positions.every((q) => q.distanceTo(p) >= minDist)) positions.push(p);
-  }
+function anomalySpec() {
+  const spec = randomPlanet();
+  spec.hue = 0.72 + Math.random() * 0.12;
+  spec.hasRing = false;
+  spec.size = 0.0001;
+  return spec;
+}
 
-  const names = shuffle(SYSTEM_NAMES);
-  const nodes = positions.map((position, id) => ({
-    id,
-    name: names[id],
-    position,
-    planet: randomPlanet(),
-    neighbors: new Set(),
-  }));
-
-  const edges = [];
-  const link = (a, b) => {
-    if (a === b || nodes[a].neighbors.has(b)) return;
-    nodes[a].neighbors.add(b);
-    nodes[b].neighbors.add(a);
-    edges.push([a, b]);
+/** The exit gate: a bright, heavily ringed cyan body. */
+function gateSpec() {
+  const hue = 0.5;
+  return {
+    hue,
+    color: new THREE.Color().setHSL(hue, 0.6, 0.6),
+    glow: new THREE.Color().setHSL(hue, 0.9, 0.7),
+    ringColor: new THREE.Color().setHSL(0.55, 1, 0.7),
+    hasRing: true,
+    ringTilt: 0.6,
+    size: 0.7,
+    bandSeed: Math.random() * 1000,
   };
+}
 
-  // Prim's MST
-  const inTree = new Set([0]);
-  while (inTree.size < nodes.length) {
-    let best = null;
-    for (const a of inTree) {
-      for (const n of nodes) {
-        if (inTree.has(n.id)) continue;
-        const d = nodes[a].position.distanceTo(n.position);
-        if (!best || d < best.d) best = { a, b: n.id, d };
+/**
+ * Lays out columns of node positions from left (start) to right (gate).
+ * Returns an array of columns, each an array of Vector3 sorted by z.
+ */
+function layoutColumns() {
+  const columnCount = randInt(...SECTOR.columns);
+  const columns = [];
+  for (let c = 0; c < columnCount; c++) {
+    const edge = c === 0 || c === columnCount - 1;
+    const count = edge ? 1 : randInt(...SECTOR.perColumn);
+    const x = -SECTOR.xSpan + (c / (columnCount - 1)) * 2 * SECTOR.xSpan;
+    const band = (2 * SECTOR.zSpan) / count;
+    const col = [];
+    for (let j = 0; j < count; j++) {
+      // Even slots across the column, jittered; single nodes wander near the middle
+      const z = count === 1 ? (Math.random() - 0.5) * SECTOR.zSpan * 0.6 : -SECTOR.zSpan + band * (j + 0.5);
+      const jx = edge ? 0 : (Math.random() - 0.5) * 2 * SECTOR.jitter;
+      const jz = count === 1 ? 0 : (Math.random() - 0.5) * 2 * SECTOR.jitter;
+      col.push(new THREE.Vector3(x + jx, 0, z + jz));
+    }
+    columns.push(col);
+  }
+  return columns;
+}
+
+/**
+ * Connects two adjacent columns (both sorted by z) with non-crossing forward
+ * edges such that every left node has at least one exit and every right node
+ * at least one entry. It walks both lists like a merge, always pairing the
+ * current left/right nodes, so links only join vertically nearby nodes.
+ */
+function linkColumns(left, right, link) {
+  let i = 0;
+  let j = 0;
+  link(left[i], right[j]);
+  while (i < left.length - 1 || j < right.length - 1) {
+    if (i === left.length - 1) j++;
+    else if (j === right.length - 1) i++;
+    else {
+      // Advance whichever side's next node is closer in z to the other side
+      const advanceLeft = Math.abs(left[i + 1].position.z - right[j].position.z);
+      const advanceRight = Math.abs(left[i].position.z - right[j + 1].position.z);
+      const advanceBoth = Math.abs(left[i + 1].position.z - right[j + 1].position.z);
+      const best = Math.min(advanceLeft, advanceRight, advanceBoth);
+      if (best === advanceBoth) {
+        i++;
+        j++;
+      } else if (best === advanceLeft) i++;
+      else j++;
+    }
+    link(left[i], right[j]);
+  }
+}
+
+/** Every node reachable from the start, and every non-gate node has a way forward. */
+export function validateSector({ nodes }) {
+  const gate = nodes.length - 1;
+  const seen = new Set([0]);
+  const queue = [0];
+  while (queue.length) {
+    for (const next of nodes[queue.shift()].neighbors) {
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
       }
     }
-    link(best.a, best.b);
-    inTree.add(best.b);
+  }
+  const problems = [];
+  if (seen.size !== nodes.length) problems.push('unreachable nodes');
+  for (const n of nodes) {
+    if (n.id !== gate && n.neighbors.size === 0) problems.push(`dead end at ${n.name}`);
+    for (const next of n.neighbors) {
+      if (nodes[next].column <= n.column) problems.push(`backward link ${n.name} → ${nodes[next].name}`);
+    }
+  }
+  if (nodes[gate].type !== NODE_TYPES.GATE) problems.push('last node is not the gate');
+  return problems;
+}
+
+/**
+ * Generates an FTL-style sector: a left-to-right path from the start (node 0,
+ * always a planet) to the Hyperdrive Gate (always the last node, rightmost).
+ * 2–7 nodes are planets; the rest of the route is open-space anomalies.
+ *
+ * Node shape (consumed by GalaxyMap): { id, name, position, planet, neighbors,
+ * station } plus { type, column }. `neighbors` holds forward links only, so
+ * the player can't backtrack; `edges` lists every link for drawing.
+ */
+export function generateGalaxy() {
+  const columns = layoutColumns();
+  const nodes = [];
+  const columnNodes = columns.map((col, c) =>
+    col.map((position) => {
+      const node = { id: nodes.length, column: c, position, neighbors: new Set(), station: false };
+      nodes.push(node);
+      return node;
+    })
+  );
+
+  // Types: start = planet, gate = last node, then pick the remaining planets
+  // from the middle columns; everything else is an anomaly.
+  const gate = nodes[nodes.length - 1];
+  const middle = nodes.slice(1, -1);
+  const planetTotal = Math.min(randInt(...SECTOR.planets), middle.length + 1);
+  const planetIds = new Set([0, ...shuffle(middle).slice(0, planetTotal - 1).map((n) => n.id)]);
+  const systemNames = shuffle(SYSTEM_NAMES);
+  const anomalyNames = shuffle(ANOMALY_NAMES);
+  for (const n of nodes) {
+    if (n === gate) {
+      n.type = NODE_TYPES.GATE;
+      n.name = 'Hyperdrive Gate';
+      n.planet = gateSpec();
+    } else if (planetIds.has(n.id)) {
+      n.type = NODE_TYPES.PLANET;
+      n.name = systemNames.pop();
+      n.planet = randomPlanet();
+    } else {
+      n.type = NODE_TYPES.ANOMALY;
+      n.name = anomalyNames.pop();
+      n.planet = anomalySpec();
+    }
   }
 
-  // Extra short links for alternative routes
-  for (const n of nodes) {
-    if (Math.random() > 0.45) continue;
-    const candidate = nodes
-      .filter((m) => m.id !== n.id && !n.neighbors.has(m.id))
-      .map((m) => ({ id: m.id, d: m.position.distanceTo(n.position) }))
-      .sort((x, y) => x.d - y.d)[0];
-    if (candidate && candidate.d < 32) link(n.id, candidate.id);
-  }
+  // Forward-only links between neighbouring columns
+  const edges = [];
+  const link = (a, b) => {
+    if (a.neighbors.has(b.id)) return;
+    a.neighbors.add(b.id);
+    edges.push([a.id, b.id]);
+  };
+  for (let c = 0; c < columnNodes.length - 1; c++) linkColumns(columnNodes[c], columnNodes[c + 1], link);
 
   placeStations(nodes);
   return { nodes, edges };
 }
 
 /**
- * Marks 1–2 systems as friendly space stations (never the start). One is
- * always within two jumps of the start so a shop is reachable early.
+ * Marks friendly space stations on planets (never the start): one in the
+ * earliest columns that have a planet, plus a second further along in larger
+ * sectors. Stations orbit planets, so anomalies and the gate never get one.
  */
 function placeStations(nodes) {
-  for (const n of nodes) n.station = false;
-  const hops = new Map([[0, 0]]);
-  const queue = [0];
-  while (queue.length) {
-    const id = queue.shift();
-    for (const next of nodes[id].neighbors) {
-      if (!hops.has(next)) {
-        hops.set(next, hops.get(id) + 1);
-        queue.push(next);
-      }
-    }
-  }
-  const pickFrom = (list) => list[Math.floor(Math.random() * list.length)];
-  const near = nodes.filter((n) => n.id !== 0 && hops.get(n.id) <= 2);
-  pickFrom(near).station = true;
-  if (nodes.length >= 7) {
-    const rest = nodes.filter((n) => n.id !== 0 && !n.station);
-    pickFrom(rest).station = true;
-  }
+  const planets = nodes.filter((n) => n.type === NODE_TYPES.PLANET && n.id !== 0);
+  if (!planets.length) return;
+  const earliest = Math.min(...planets.map((n) => n.column));
+  const first = pick(planets.filter((n) => n.column <= earliest + 1));
+  first.station = true;
+  const rest = planets.filter((n) => n !== first && n.column > first.column);
+  if (nodes.length >= 9 && rest.length) pick(rest).station = true;
 }
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createShip, createStation } from './ship.js';
-import { generateGalaxy, GalaxyMap } from './galaxy.js';
+import { generateGalaxy, GalaxyMap, NODE_TYPES } from './galaxy.js';
 import { Combat } from './combat.js';
 import { onPress, SwipeTracker } from './input.js';
 import { Crew, CrewPanel } from './crew.js';
@@ -199,6 +199,7 @@ const state = {
   scrap: 0,
   missiles: 4,
   jumps: 0,
+  sector: 1,
   piratesDefeated: 0,
   gameOver: false,
   eventOpen: false,
@@ -214,6 +215,7 @@ const hud = {
   fuel: document.getElementById('hud-fuel'),
   scrap: document.getElementById('hud-scrap'),
   system: document.getElementById('hud-system'),
+  systemLabel: document.querySelector('.stat.system .label'),
   toast: document.getElementById('toast'),
 };
 function renderHud() {
@@ -223,6 +225,7 @@ function renderHud() {
   hud.fuel.textContent = state.fuel;
   hud.scrap.textContent = state.scrap;
   hud.system.textContent = galaxyMap.current.name;
+  hud.systemLabel.textContent = `Sector ${state.sector}`;
 }
 const chance = (p) => Math.random() < p;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -291,9 +294,31 @@ onPress(powerBtn, () => {
 
 // Galaxy map lives far below the planet scene; the camera flies between the two
 const MAP_CENTER = new THREE.Vector3(0, -160, 0);
-const galaxyMap = new GalaxyMap(generateGalaxy(), MAP_CENTER, document.getElementById('map-labels'));
-scene.add(galaxyMap.group);
-applyPlanet(galaxyMap.current.planet);
+const mapLabels = document.getElementById('map-labels');
+let galaxyMap = null;
+
+/**
+ * Generates a new sector and builds its map with the existing GalaxyMap
+ * renderer, replacing the previous sector's map (scene group + labels).
+ */
+function enterSector() {
+  if (galaxyMap) {
+    scene.remove(galaxyMap.group);
+    galaxyMap.group.traverse((o) => {
+      o.geometry?.dispose();
+      o.material?.map?.dispose();
+      o.material?.dispose();
+    });
+    mapLabels.replaceChildren();
+  }
+  galaxyMap = new GalaxyMap(generateGalaxy(), MAP_CENTER, mapLabels);
+  galaxyMap.onSelect = (id) => {
+    if (mapInteractive() && id !== galaxyMap.currentId) jumpTo(id);
+  };
+  scene.add(galaxyMap.group);
+  applyPlanet(galaxyMap.current.planet);
+}
+enterSector();
 renderHud();
 
 const views = {
@@ -506,7 +531,7 @@ function showGameOver(reason) {
   document.getElementById('gameover-reason').textContent = GAME_OVER_REASONS[reason];
   document.body.classList.add('game-over');
   document.getElementById('gameover-stats').textContent =
-    `Jumps made: ${state.jumps} · Pirates defeated: ${state.piratesDefeated} · Scrap: ${state.scrap}`;
+    `Sector ${state.sector} · Jumps made: ${state.jumps} · Pirates defeated: ${state.piratesDefeated} · Scrap: ${state.scrap}`;
   document.getElementById('gameover').classList.add('show');
   document.getElementById('restart-btn').focus();
 }
@@ -547,6 +572,11 @@ async function jumpTo(id) {
   const notes = arrivalUpkeep();
   renderHud();
   updateStation();
+  if (node.type === NODE_TYPES.GATE) {
+    toast([`Arrived at the ${node.name}`, ...notes].join(' · '));
+    await runEvent(gateEvent());
+    return;
+  }
   if (node.station) {
     // Friendly station: no pirates or crew events, just dock and shop
     toast([`Docking at ${node.name} Station`, ...notes].join(' · '));
@@ -566,6 +596,26 @@ async function jumpTo(id) {
     renderHud();
     if (crew.count === 0) showGameOver('crew');
   }
+}
+
+/** The exit gate: the only way onward from the rightmost node of a sector. */
+function gateEvent() {
+  return {
+    title: 'Hyperdrive Gate',
+    text: `The gate's ring spins up, charged and waiting. Beyond it lies Sector ${state.sector + 1}.`,
+    choices: [
+      {
+        label: `Jump to Sector ${state.sector + 1}`,
+        run: () => {
+          state.sector += 1;
+          enterSector();
+          updateStation();
+          renderHud();
+          return `Hyperspace folds around the ship. Welcome to Sector ${state.sector}, arriving at ${galaxyMap.current.name}.`;
+        },
+      },
+    ],
+  };
 }
 
 /** Passive effects on every jump: shield regen, engineer repairs, crew recovery. */
@@ -638,10 +688,6 @@ function runEvent(event) {
     buttons.find((b) => !b.disabled)?.focus();
   });
 }
-
-galaxyMap.onSelect = (id) => {
-  if (mapInteractive() && id !== galaxyMap.currentId) jumpTo(id);
-};
 
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
