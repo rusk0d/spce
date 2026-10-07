@@ -33,10 +33,13 @@
     <p class="crew-tip" id="crew-tip"></p>
   </aside>
 
+  <aside id="power" aria-label="Reactor power"></aside>
+
   <div id="map-labels"></div>
   <div id="controls">
     <p id="help"></p>
     <div class="control-row">
+      <button id="power-btn" type="button" aria-controls="power" aria-expanded="false">Power</button>
       <button id="crew-btn" type="button" aria-controls="crew" aria-expanded="false">Crew <span class="crew-btn-count" id="crew-btn-count"></span></button>
       <button id="shop-btn" type="button">Shop</button>
       <button id="map-btn" type="button"><span id="map-btn-text">Galaxy Map</span><kbd>M</kbd></button>
@@ -51,7 +54,17 @@
     </div>
     <div class="hp-bar"><div class="hp-fill" id="enemy-hp-fill"></div></div>
     <div class="combat-log" id="combat-log"></div>
-    <button id="attack-btn" type="button">Attack</button>
+    <div class="combat-power" id="combat-power"></div>
+    <div class="weapons">
+      <button id="laser-btn" class="weapon weapon-laser" type="button">
+        <span class="weapon-name">Laser</span>
+        <span class="weapon-detail"></span>
+      </button>
+      <button id="missile-btn" class="weapon weapon-missile" type="button">
+        <span class="weapon-name">Missile</span>
+        <span class="weapon-detail"></span>
+      </button>
+    </div>
   </div>
 
   <div id="shop" role="dialog" aria-modal="true" aria-labelledby="shop-title">

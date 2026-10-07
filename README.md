@@ -60,7 +60,7 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
 - `src/crew.js` — crew model, role bonuses and the crew panel
 - `src/events.js` — star-node crew events
 - `src/shop.js` — Sector Shop catalogue and panel
-- `src/combat.js` — pirate encounter: turn logic, lasers, hit flashes, explosions
+- `src/combat.js` — pirate encounter: turn logic, laser & missile weapons, effects
 - `src/ship.js` — low-poly player ship, pirate raider and space station meshes
 - `src/textures.js` — shared glow sprite texture
 - `src/input.js` — press-on-pointerdown buttons and throttled swipe tracking

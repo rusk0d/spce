@@ -8,8 +8,19 @@ const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 
 const PLAYER_LASER = 0xff3344;
 const ENEMY_LASER = 0x44ff66;
+const MISSILE_COLOR = 0xffaa33;
 const ENEMY_MAX_HP = 60;
 const HIT_CHANCE = 0.85;
+
+/**
+ * Player weapons. `power` is the Weapons power level needed for it to be
+ * online. Laser is fast (two quick bolts, low damage); the missile is slow
+ * (one heavy projectile, reloads for a turn) and uses ammo.
+ */
+export const WEAPONS = {
+  laser: { name: 'Laser', power: 1, shots: 2, damage: [6, 10], hit: 0.85, overchargeBonus: 3 },
+  missile: { name: 'Missile', power: 2, shots: 1, damage: [26, 34], hit: 0.95, ammo: 1, reload: 1 },
+};
 const ENEMY_SCALE = 1.35;
 
 const glowTexture = makeGlowTexture();
@@ -167,6 +178,54 @@ class Effects {
     });
   }
 
+  /** A slow missile that arcs from `from` to `to`; resolves when it arrives. */
+  missile(from, to) {
+    const body = new THREE.Group();
+    const shell = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.6, 6),
+      new THREE.MeshStandardMaterial({ color: 0xd8dde4, flatShading: true, metalness: 0.4, roughness: 0.4 })
+    );
+    shell.rotation.x = Math.PI / 2; // nose along +Z for lookAt
+    body.add(shell);
+    const exhaust = glowSprite(MISSILE_COLOR, 0.9);
+    exhaust.position.z = -0.4;
+    body.add(exhaust);
+    body.position.copy(from);
+    this.scene.add(body);
+
+    const duration = 0.9;
+    const mid = from.clone().lerp(to, 0.5).add(new THREE.Vector3(0, 2.2, 0)); // lofted arc
+    const curve = new THREE.QuadraticBezierCurve3(from.clone(), mid, to.clone());
+    const ahead = new THREE.Vector3();
+    let t = 0;
+    let trailTimer = 0;
+    return new Promise((resolve) => {
+      this.add({
+        update: (dt) => {
+          t += dt;
+          const k = Math.min(t / duration, 1);
+          const eased = k * k * (1.6 - 0.6 * k); // slow launch, accelerating in
+          curve.getPoint(eased, body.position);
+          curve.getPoint(Math.min(eased + 0.02, 1), ahead);
+          if (ahead.distanceToSquared(body.position) > 1e-6) body.lookAt(ahead);
+          trailTimer += dt;
+          if (trailTimer > 0.03) {
+            trailTimer = 0;
+            this.flash(body.position, 0xbbbbbb, 0.5, 0.5); // smoke puff
+          }
+          if (k >= 1) resolve();
+          return k < 1;
+        },
+        dispose: () => {
+          this.scene.remove(body);
+          shell.geometry.dispose();
+          shell.material.dispose();
+          exhaust.material.dispose();
+        },
+      });
+    });
+  }
+
   explosion(position, color) {
     const count = 120;
     const positions = new Float32Array(count * 3);
@@ -215,7 +274,7 @@ class Effects {
 }
 
 /**
- * Turn-based pirate encounter. The player attacks via the UI button; the
+ * Turn-based pirate encounter. The player attacks with a weapon button; the
  * pirate returns fire after each player shot until one side is destroyed.
  */
 export class Combat {
@@ -225,7 +284,11 @@ export class Combat {
    * @param enemyHitChance () => probability the pirate's shot lands.
    * @param onTurnEnd () => called after each full exchange (passive regen).
    */
-  constructor({ scene, playerShip, enemyPosition, ui, onPlayerHit, enemyHitChance, onTurnEnd, onEnd }) {
+  /**
+   * @param weaponPower () => current Weapons power level.
+   * @param ammo { count: () => number, use: () => void } missile ammo.
+   */
+  constructor({ scene, playerShip, enemyPosition, ui, onPlayerHit, enemyHitChance, onTurnEnd, onEnd, weaponPower, ammo }) {
     this.scene = scene;
     this.playerShip = playerShip;
     this.enemyPosition = enemyPosition;
@@ -234,13 +297,17 @@ export class Combat {
     this.enemyHitChance = enemyHitChance;
     this.onTurnEnd = onTurnEnd;
     this.onEnd = onEnd;
+    this.weaponPower = weaponPower;
+    this.ammo = ammo;
+    this.missileReload = 0; // turns until the launcher can fire again
     this.effects = new Effects(scene);
     this.active = false;
     this.busy = false;
     this.enemy = null;
     this.playerHomeQuat = playerShip.quaternion.clone();
     this.playerTargetQuat = null;
-    onPress(this.ui.attack, () => this.attack());
+    onPress(this.ui.laser, () => this.attack('laser'));
+    onPress(this.ui.missile, () => this.attack('missile'));
   }
 
   async start() {
@@ -266,12 +333,13 @@ export class Combat {
 
     this.renderEnemyHp();
     this.log('A pirate raider drops out of warp!');
+    this.missileReload = 0;
     this.ui.panel.classList.add('show');
-    this.ui.attack.disabled = true;
+    this.renderWeapons();
     await wait(900);
     this.busy = false;
-    this.ui.attack.disabled = false;
-    this.log('Your move, captain.');
+    this.renderWeapons();
+    this.log(this.weaponPower() > 0 ? 'Your move, captain.' : 'Weapons are unpowered — route reactor power to Weapons!');
   }
 
   muzzle(ship) {
@@ -299,20 +367,82 @@ export class Combat {
     return hit;
   }
 
-  async attack() {
-    if (!this.active || this.busy) return;
-    this.busy = true;
-    this.ui.attack.disabled = true;
+  /** Why a weapon can't fire right now, or null if it's ready. */
+  weaponBlocked(id) {
+    const w = WEAPONS[id];
+    if (this.weaponPower() < w.power) return 'Unpowered';
+    if (id === 'missile' && this.missileReload > 0) return 'Reloading';
+    if (w.ammo && this.ammo.count() < w.ammo) return 'No ammo';
+    return null;
+  }
 
-    // Player turn
-    const hit = await this.fire(this.playerShip, this.enemy, PLAYER_LASER);
-    if (hit) {
-      const dmg = randInt(14, 24);
-      this.enemyHp = Math.max(this.enemyHp - dmg, 0);
-      this.renderEnemyHp();
-      this.log(`Laser hit! Pirate takes ${dmg} damage.`);
+  /** Refreshes the weapon buttons (power, ammo, reload). Safe to call any time. */
+  renderWeapons() {
+    const overcharged = this.weaponPower() >= 3;
+    const laserDmg = WEAPONS.laser.damage.map((d) => d + (overcharged ? WEAPONS.laser.overchargeBonus : 0));
+    const details = {
+      laser: `2× ${laserDmg[0]}–${laserDmg[1]} dmg${overcharged ? ' ⚡' : ''}`,
+      missile: `${WEAPONS.missile.damage.join('–')} dmg · ammo ${this.ammo.count()}`,
+    };
+    for (const id of Object.keys(WEAPONS)) {
+      const btn = this.ui[id];
+      const blocked = this.weaponBlocked(id);
+      btn.disabled = !this.active || this.busy || Boolean(blocked);
+      btn.querySelector('.weapon-detail').textContent = blocked ? `${blocked} · ${details[id]}` : details[id];
+      btn.classList.toggle('offline', blocked === 'Unpowered');
+    }
+  }
+
+  damageRoll(id) {
+    const w = WEAPONS[id];
+    const bonus = id === 'laser' && this.weaponPower() >= 3 ? w.overchargeBonus : 0;
+    return randInt(w.damage[0], w.damage[1]) + bonus;
+  }
+
+  /** Player turn with the chosen weapon, then the pirate's reply. */
+  async attack(id) {
+    if (!this.active || this.busy || this.weaponBlocked(id)) return;
+    this.busy = true;
+    this.renderWeapons();
+    const w = WEAPONS[id];
+
+    let total = 0;
+    let hits = 0;
+    if (id === 'laser') {
+      // Fast: two bolts in quick succession
+      for (let i = 0; i < w.shots && this.enemyHp > 0; i++) {
+        const hit = await this.fire(this.playerShip, this.enemy, PLAYER_LASER, w.hit);
+        if (hit) {
+          const dmg = this.damageRoll(id);
+          total += dmg;
+          hits += 1;
+          this.enemyHp = Math.max(this.enemyHp - dmg, 0);
+          this.renderEnemyHp();
+        }
+        await wait(140);
+      }
+      this.log(hits ? `Laser ${hits}/${w.shots} hits! Pirate takes ${total} damage.` : 'Both laser bolts miss.');
     } else {
-      this.log('Your shot misses.');
+      // Slow: one heavy missile, then the launcher reloads
+      this.ammo.use();
+      this.missileReload = w.reload + 1; // +1 because the end of this turn ticks it down
+      this.renderWeapons();
+      this.log('Missile away…');
+      const hit = Math.random() < w.hit;
+      const from = this.muzzle(this.playerShip);
+      const to = this.enemy.position.clone();
+      if (!hit) to.add(new THREE.Vector3(0, 2.5, 0)).add(to.clone().sub(from).normalize().multiplyScalar(5));
+      await this.effects.missile(from, to);
+      if (hit) {
+        const dmg = this.damageRoll(id);
+        this.enemyHp = Math.max(this.enemyHp - dmg, 0);
+        this.renderEnemyHp();
+        this.effects.flash(to, MISSILE_COLOR, 5, 0.5);
+        this.effects.hitTint(this.enemy, MISSILE_COLOR);
+        this.log(`Missile impact! Pirate takes ${dmg} damage.`);
+      } else {
+        this.log('The missile streaks past the pirate.');
+      }
     }
 
     if (this.enemyHp <= 0) {
@@ -355,9 +485,10 @@ export class Combat {
     }
 
     this.onTurnEnd();
+    this.missileReload = Math.max(this.missileReload - 1, 0);
     await wait(250);
     this.busy = false;
-    this.ui.attack.disabled = false;
+    this.renderWeapons();
   }
 
   finish(outcome) {
@@ -365,6 +496,7 @@ export class Combat {
     this.busy = false;
     this.playerTargetQuat = this.playerHomeQuat.clone();
     this.ui.panel.classList.remove('show');
+    this.renderWeapons();
     this.onEnd(outcome);
   }
 

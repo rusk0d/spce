@@ -6,6 +6,13 @@ import { onPress, SwipeTracker } from './input.js';
 import { Crew, CrewPanel } from './crew.js';
 import { pickCrewEvent } from './events.js';
 import { Shop } from './shop.js';
+import {
+  PowerGrid,
+  PowerPanel,
+  SHIELD_REGEN_PER_BAR_TURN,
+  SHIELD_REGEN_PER_BAR_JUMP,
+  EVASION_PER_ENGINE_BAR,
+} from './power.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -190,6 +197,7 @@ const state = {
 
   fuel: 10,
   scrap: 0,
+  missiles: 4,
   jumps: 0,
   piratesDefeated: 0,
   gameOver: false,
@@ -197,8 +205,6 @@ const state = {
 };
 const PIRATE_CHANCE = 0.4;
 const CREW_EVENT_CHANCE = 0.55; // per arrival without pirates
-const SHIELD_REGEN_PER_TURN = 5; // passive regen each combat exchange, before crew bonus
-const SHIELD_REGEN_PER_JUMP = 12;
 const CREW_INJURY_ON_HULL_HIT = 0.25;
 const RECOVERY_PER_JUMP = 0.25; // chance an injured crew member recovers each jump
 const hud = {
@@ -251,12 +257,37 @@ crewPanel = new CrewPanel(crew, document.getElementById('crew'));
 renderCrew();
 onPress(crewBtn, () => {
   const open = document.body.classList.toggle('crew-open');
+  document.body.classList.remove('power-open');
   crewBtn.setAttribute('aria-expanded', String(open));
 });
 
-function regenShields(base) {
-  state.shields = Math.min(state.maxShields, state.shields + base * crew.shieldRegenMultiplier);
+/** Passive shield regen: scales with Shields power bars and the Shields crew bonus. */
+function regenShields(perBar) {
+  const amount = perBar * power.level('shields') * crew.shieldRegenMultiplier;
+  state.shields = Math.min(state.maxShields, state.shields + amount);
 }
+
+// Reactor power grid: 4 bars split between Weapons, Shields and Engines.
+// The standalone panel (side panel / pop-up) and the compact copy inside the
+// combat panel share the same grid.
+const powerPanels = [];
+// The callback only runs on player input, after `combat` below is initialised
+const power = new PowerGrid(() => {
+  powerPanels.forEach((p) => p.render());
+  combat.renderWeapons();
+});
+const powerExtra = (id) => (id === 'weapons' ? `${state.missiles} missiles` : '');
+powerPanels.push(
+  new PowerPanel(power, document.getElementById('power'), { extra: powerExtra }),
+  new PowerPanel(power, document.getElementById('combat-power'), { extra: powerExtra })
+);
+powerPanels.forEach((p) => p.render());
+const powerBtn = document.getElementById('power-btn');
+onPress(powerBtn, () => {
+  const open = document.body.classList.toggle('power-open');
+  document.body.classList.remove('crew-open');
+  powerBtn.setAttribute('aria-expanded', String(open));
+});
 
 // Galaxy map lives far below the planet scene; the camera flies between the two
 const MAP_CENTER = new THREE.Vector3(0, -160, 0);
@@ -294,6 +325,15 @@ function viewPose(name) {
   const fit = THREE.MathUtils.clamp(1.25 / aspect, 1, base.maxFit ?? 2.4);
   const position = base.position.clone().sub(base.target).multiplyScalar(fit).add(base.target);
   const target = base.target.clone();
+  if (name === 'combat' && window.innerHeight <= 500 && aspect > 1.3) {
+    // Landscape phones dock the combat panel on the right half of the screen,
+    // so slide the shot sideways to keep both ships in the free left part
+    const right = target.clone().sub(position).cross(THREE.Object3D.DEFAULT_UP).normalize();
+    const halfWidth = position.distanceTo(target) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * aspect;
+    const shift = right.multiplyScalar(halfWidth * 0.46);
+    position.add(shift);
+    target.add(shift);
+  }
   if (name === 'main' && orbit.yaw !== 0) {
     const up = THREE.Object3D.DEFAULT_UP;
     position.sub(shipBase).applyAxisAngle(up, orbit.yaw).add(shipBase);
@@ -341,7 +381,7 @@ function setView(next) {
   };
   document.body.classList.toggle('map-open', next === 'map');
   document.body.classList.toggle('in-combat', next === 'combat');
-  if (next === 'combat') document.body.classList.remove('crew-open');
+  if (next === 'combat') document.body.classList.remove('crew-open', 'power-open');
   controls.help.textContent = helpText[next];
   controls.mapBtnText.textContent = next === 'map' ? 'Close Map' : 'Galaxy Map';
 }
@@ -374,9 +414,12 @@ const shop = new Shop({
   state,
   onOpen: () => {
     document.body.classList.add('shop-open');
-    document.body.classList.remove('crew-open');
+    document.body.classList.remove('crew-open', 'power-open');
   },
-  onPurchase: () => renderHud(),
+  onPurchase: () => {
+    renderHud();
+    powerPanels.forEach((p) => p.render());
+  },
   onClose: (viaKeyboard) => {
     document.body.classList.remove('shop-open');
     if (viaKeyboard) shopBtn.focus({ preventScroll: true });
@@ -397,12 +440,21 @@ const combat = new Combat({
   enemyPosition: new THREE.Vector3(13, 2, 11),
   ui: {
     panel: document.getElementById('combat'),
-    attack: document.getElementById('attack-btn'),
+    laser: document.getElementById('laser-btn'),
+    missile: document.getElementById('missile-btn'),
     enemyHpFill: document.getElementById('enemy-hp-fill'),
     enemyHpText: document.getElementById('enemy-hp-text'),
     log: document.getElementById('combat-log'),
   },
-  enemyHitChance: () => Math.max(0.85 - crew.evasion, 0.4),
+  weaponPower: () => power.level('weapons'),
+  ammo: {
+    count: () => state.missiles,
+    use: () => {
+      state.missiles -= 1;
+      powerPanels.forEach((p) => p.render());
+    },
+  },
+  enemyHitChance: () => Math.max(0.85 - crew.evasion - power.level('engines') * EVASION_PER_ENGINE_BAR, 0.3),
   onPlayerHit: (dmg) => {
     // Shields soak damage first; whatever gets through hits the hull and may hurt crew
     const absorbed = Math.min(Math.floor(state.shields), dmg);
@@ -421,7 +473,7 @@ const combat = new Combat({
     return { message, outcome };
   },
   onTurnEnd: () => {
-    regenShields(SHIELD_REGEN_PER_TURN);
+    regenShields(SHIELD_REGEN_PER_BAR_TURN);
     renderHud();
   },
   onEnd: (outcome) => {
@@ -450,7 +502,7 @@ const GAME_OVER_REASONS = {
 };
 function showGameOver(reason) {
   state.gameOver = true;
-  document.body.classList.remove('crew-open');
+  document.body.classList.remove('crew-open', 'power-open');
   document.getElementById('gameover-reason').textContent = GAME_OVER_REASONS[reason];
   document.body.classList.add('game-over');
   document.getElementById('gameover-stats').textContent =
@@ -480,6 +532,10 @@ async function jumpTo(id) {
   }
   if (state.fuel <= 0) {
     toast('Out of fuel');
+    return;
+  }
+  if (power.level('engines') === 0) {
+    toast('Engines unpowered — route reactor power to Engines to jump');
     return;
   }
   state.fuel -= 1;
@@ -515,7 +571,7 @@ async function jumpTo(id) {
 /** Passive effects on every jump: shield regen, engineer repairs, crew recovery. */
 function arrivalUpkeep() {
   const notes = [];
-  regenShields(SHIELD_REGEN_PER_JUMP);
+  regenShields(SHIELD_REGEN_PER_BAR_JUMP);
   const repair = Math.min(crew.repairPerJump, state.maxHull - state.hull);
   if (repair > 0) {
     state.hull += repair;
@@ -611,8 +667,15 @@ for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
   canvas.addEventListener(type, (e) => swipe.end(e));
 }
 
+function syncHudBottom() {
+  const bottom = document.getElementById('hud').getBoundingClientRect().bottom;
+  document.documentElement.style.setProperty('--hud-bottom', `${Math.round(bottom)}px`);
+}
+syncHudBottom();
+
 // Resize (also fires on device rotation)
 window.addEventListener('resize', () => {
+  syncHudBottom();
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);

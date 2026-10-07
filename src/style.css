@@ -163,7 +163,8 @@ body.shop-open #controls {
 
 #map-btn,
 #crew-btn,
-#shop-btn {
+#shop-btn,
+#power-btn {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -184,19 +185,22 @@ body.shop-open #controls {
 
 #map-btn:hover,
 #crew-btn:hover,
-#shop-btn:hover {
+#shop-btn:hover,
+#power-btn:hover {
   background: rgba(20, 50, 80, 0.85);
 }
 
 #map-btn:active,
 #crew-btn:active,
-#shop-btn:active {
+#shop-btn:active,
+#power-btn:active {
   transform: scale(0.97);
 }
 
 #map-btn:focus-visible,
 #crew-btn:focus-visible,
-#shop-btn:focus-visible {
+#shop-btn:focus-visible,
+#power-btn:focus-visible {
   outline: 2px solid #9fe8ff;
   outline-offset: 2px;
 }
@@ -398,7 +402,7 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
   color: #f3d3d6;
 }
 
-#combat button,
+#combat .weapon,
 #gameover button {
   width: 100%;
   min-height: 48px;
@@ -415,25 +419,218 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
   transition: background 0.15s, opacity 0.15s, transform 0.08s;
 }
 
-#combat button:hover:not(:disabled),
+#combat .weapon:hover:not(:disabled),
 #gameover button:hover {
   background: #d22c3c;
 }
 
-#combat button:active:not(:disabled),
+#combat .weapon:active:not(:disabled),
 #gameover button:active {
   transform: scale(0.98);
 }
 
-#combat button:focus-visible,
+#combat .weapon:focus-visible,
 #gameover button:focus-visible {
   outline: 2px solid #9fe8ff;
   outline-offset: 2px;
 }
 
-#combat button:disabled {
+#combat .weapon:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* Two weapon buttons side by side */
+.weapons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+#combat .weapon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: 6px 8px;
+}
+
+.weapon-detail {
+  font-size: 0.75em;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.9;
+}
+
+#combat .weapon-missile {
+  border-color: #ffaa33;
+  background: #9a5410;
+}
+
+#combat .weapon-missile:hover:not(:disabled) {
+  background: #b8661a;
+}
+
+#combat .weapon.offline {
+  background: transparent;
+  border-style: dashed;
+}
+
+/* ---------- Reactor power grid ---------- */
+
+#power {
+  position: fixed;
+  /* --hud-bottom is kept in sync from JS, so a wrapped HUD never overlaps */
+  top: calc(var(--hud-bottom, 90px) + 10px);
+  left: var(--safe-left);
+  width: 270px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.power-panel {
+  font-size: var(--fs-small);
+}
+
+.power-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.reactor {
+  display: flex;
+  gap: 3px;
+}
+
+.reactor-pip {
+  width: 10px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 210, 120, 0.5);
+}
+
+/* Lit pips are unallocated reactor power waiting to be assigned */
+.reactor-pip.free {
+  background: #ffd27a;
+  box-shadow: 0 0 6px rgba(255, 210, 120, 0.7);
+}
+
+.reactor-free {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.power-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.power-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.power-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.power-name {
+  font-weight: 600;
+}
+
+.power-effect {
+  font-size: 0.85em;
+  color: var(--text-dim);
+}
+
+.power-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.power-bars {
+  display: flex;
+  gap: 3px;
+}
+
+.power-bar,
+.power-step {
+  border: 1px solid rgba(120, 200, 255, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.power-bar {
+  width: 22px;
+  height: 32px;
+  border-radius: 3px;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+
+.power-weapons .power-bar.on { background: #ff5566; border-color: #ff8a96; box-shadow: 0 0 6px rgba(255, 85, 102, 0.6); }
+.power-shields .power-bar.on { background: #4fd6ff; border-color: #8ce6ff; box-shadow: 0 0 6px rgba(79, 214, 255, 0.6); }
+.power-engines .power-bar.on { background: #7dff9b; border-color: #b0ffc2; box-shadow: 0 0 6px rgba(125, 255, 155, 0.6); }
+
+.power-step {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+.power-step:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.power-bar:focus-visible,
+.power-step:focus-visible {
+  outline: 2px solid #9fe8ff;
+  outline-offset: 2px;
+}
+
+/* Touch screens: every power control is at least 44px tall */
+@media (pointer: coarse) {
+  .power-bar {
+    width: 30px;
+    height: 44px;
+  }
+
+  .power-step {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* The combat panel carries its own copy of the grid only on small screens,
+   where the standalone panel is a pop-up hidden during combat */
+.combat-power {
+  display: none;
+}
+
+#power-btn {
+  display: none;
 }
 
 /* ---------- Game over ---------- */
@@ -894,7 +1091,8 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
 
 /* ---------- Small screens ---------- */
 
-/* Small screens: the crew panel becomes a pop-up opened from the Crew button */
+/* Small screens: the crew and power panels become pop-ups opened from the
+   Crew / Power buttons, and combat carries its own copy of the power grid */
 @media (max-width: 560px), (max-height: 500px) {
   :root { --crew-width: 0px; }
 
@@ -902,17 +1100,27 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
     right: var(--safe-right);
   }
 
-  #crew-btn {
+  #crew-btn,
+  #power-btn {
     display: inline-flex;
   }
 
-  #crew {
+  #crew,
+  #power {
     display: none;
     background: rgba(8, 16, 28, 0.92);
   }
 
-  body.crew-open #crew {
+  body.crew-open #crew,
+  body.power-open #power {
     display: block;
+  }
+
+  .combat-power {
+    display: block;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 90, 100, 0.25);
   }
 }
 
@@ -967,8 +1175,9 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
     min-height: 56px;
   }
 
-  /* Crew pop-up sits above the bottom controls */
-  #crew {
+  /* Crew / power pop-ups sit above the bottom controls */
+  #crew,
+  #power {
     top: auto;
     left: 50%;
     right: auto;
@@ -1045,10 +1254,50 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
     max-height: calc(100% - var(--safe-top) - var(--safe-bottom) - 150px);
   }
 
+  /* Power pop-up docks top-left, under the HUD row */
+  #power {
+    top: calc(var(--safe-top) + 60px);
+    left: var(--safe-left);
+    width: min(300px, 45%);
+    max-height: calc(100% - var(--safe-top) - var(--safe-bottom) - 70px);
+    overflow-y: auto;
+  }
+
+  /* In combat the grid's three systems sit side by side as columns of
+     tappable bars (no −/+), keeping the panel short enough to clear the HUD */
+  .combat-power .power-head {
+    margin-bottom: 4px;
+  }
+
+  .combat-power .power-rows {
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .combat-power .power-row {
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .combat-power .power-info {
+    align-items: center;
+    text-align: center;
+  }
+
+  .combat-power .power-effect {
+    white-space: nowrap;
+  }
+
+  .combat-power .power-step {
+    display: none;
+  }
+
   #combat {
     left: auto;
     right: var(--safe-right);
-    width: min(320px, 50%);
+    width: min(400px, 52%);
     padding: 10px 12px 12px;
     transform: translateY(16px);
   }
@@ -1061,7 +1310,7 @@ body.at-station:not(.map-open):not(.in-combat) #shop-btn {
     margin: 6px 0 8px;
   }
 
-  #combat button {
+  #combat .weapon {
     min-height: 44px;
   }
 }

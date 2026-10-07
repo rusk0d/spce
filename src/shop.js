@@ -28,6 +28,17 @@ export const SHOP_ITEMS = [
     },
   },
   {
+    id: 'missile',
+    name: 'Missile',
+    effect: '+1 Missile ammo',
+    price: 6,
+    stat: (s) => `Missiles ${s.missiles}`,
+    blocked: () => null,
+    buy: (s) => {
+      s.missiles += 1;
+    },
+  },
+  {
     id: 'reactor',
     name: 'Reactor Upgrade',
     effect: '+1 max Shields (permanent)',
