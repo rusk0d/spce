@@ -18,11 +18,11 @@ A minimal Three.js space scene (loaded from CDN via an import map — no build s
   - Click/tap a linked system ahead of you to jump there (−1 Fuel). Reaching
     the Hyperdrive Gate offers the jump to the next sector, which generates a
     fresh map; the HUD shows the current sector.
-- Pirate encounters: each jump has a 40% chance of a pirate ambush. The fight is
-  turn-based — press **Attack** to fire a red laser at the raider (85% hit
-  chance, 14–24 damage against 60 HP); it answers with a green laser (8–16
-  hull damage). Destroying it salvages 15–30 Scrap; if your Hull reaches 0 it's
-  Game Over, and **Restart** starts a fresh galaxy.
+- Pirate encounters: each jump to a non-station system has a 40% chance of a
+  pirate ambush (60 HP). The fight is turn-based — fire the **Laser** or
+  **Missile** (see weapons below); the pirate answers with a green laser (8–16
+  damage, soaked by shields first). Destroying it salvages 15–30 Scrap; if your
+  Hull reaches 0 it's Game Over, and **Restart** starts a fresh run.
 
 - Crew: you start with three crew (Pilot, Engineer, Shields), shown in the crew
   panel (top-right, or behind the **Crew** button on small screens). Tap/click
